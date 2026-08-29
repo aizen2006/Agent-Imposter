@@ -64,6 +64,7 @@ export async function GET(
 
       send("meta", {
         id: game.id,
+        marketId: game.numericId.toString(),
         events: game.events.length,
         totalMs: Math.round(totalMs),
         closesInMs: Math.round(closesAtMs),

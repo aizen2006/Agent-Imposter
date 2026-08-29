@@ -15,11 +15,17 @@ type Status = "connecting" | "live" | "done" | "error";
 export function LiveGame({ id, speed = 1 }: { id: string; speed?: number }) {
   const [match, setMatch] = useState<Match | null>(null);
   const [status, setStatus] = useState<Status>("connecting");
+  const [marketId, setMarketId] = useState<bigint | undefined>();
   const source = useRef<EventSource | null>(null);
 
   useEffect(() => {
     const es = new EventSource(`/api/game/${id}/stream?speed=${speed}`);
     source.current = es;
+
+    es.addEventListener("meta", (e) => {
+      const meta = JSON.parse((e as MessageEvent).data) as { marketId?: string };
+      if (meta.marketId) setMarketId(BigInt(meta.marketId));
+    });
 
     es.addEventListener("frame", (e) => {
       setMatch(JSON.parse((e as MessageEvent).data) as Match);
@@ -29,6 +35,9 @@ export function LiveGame({ id, speed = 1 }: { id: string; speed?: number }) {
     es.addEventListener("done", () => {
       setStatus("done");
       es.close();
+      // Reveal the Imposter on-chain. Every viewer fires this; the contract
+      // rejects the second one with "already resolved", which is expected.
+      void fetch(`/api/game/${id}/resolve`, { method: "POST" }).catch(() => {});
     });
 
     es.onerror = () => {
@@ -44,7 +53,7 @@ export function LiveGame({ id, speed = 1 }: { id: string; speed?: number }) {
 
   return (
     <>
-      <LiveMatch match={match} />
+      <LiveMatch match={match} marketId={marketId} />
       {status === "done" && (
         <div style={{ textAlign: "center", paddingBottom: 48 }}>
           <Link href="/" className="btn btn-primary" style={{ padding: "12px 28px" }}>

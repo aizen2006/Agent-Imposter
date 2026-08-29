@@ -11,9 +11,13 @@
   "dependencies": {
     "@langchain/core": "^1.2.9",
     "@langchain/openai": "^1.5.10",
+    "@tanstack/react-query": "^5.102.8",
     "next": "16.3.3",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "server-only": "^0.0.1",
+    "viem": "^2.56.0",
+    "wagmi": "^3.7.7",
     "zod": "^4.5.2"
   },
   "devDependencies": {

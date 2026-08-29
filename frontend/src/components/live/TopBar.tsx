@@ -1,12 +1,25 @@
+"use client";
+
+import { formatUnits } from "viem";
+import { useBalance } from "wagmi";
+import { TESTNET_ID } from "@/chain/monad";
+import { useWallet } from "@/chain/useMarket";
+
 const NAV = ["Live", "Lobby", "Leaderboard", "My bets"];
 
-export function TopBar({
-  balance = "412.08 MON",
-  address = "0x8f…21c",
-}: {
-  balance?: string;
-  address?: string;
-}) {
+export function TopBar() {
+  const wallet = useWallet();
+  const { data: bal } = useBalance({
+    address: wallet.address,
+    // Always the testnet balance, even while the wallet sits on another chain.
+    chainId: TESTNET_ID,
+    query: { enabled: Boolean(wallet.address), refetchInterval: 10000 },
+  });
+
+  // wagmi v3 returns { value, decimals, symbol } — no `formatted` field.
+  const balance = bal
+    ? `${Number(formatUnits(bal.value, bal.decimals)).toFixed(2)} ${bal.symbol}`
+    : "—";
   return (
     <div
       style={{
@@ -68,20 +81,55 @@ export function TopBar({
       </nav>
 
       <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
-        <button type="button" className="wallet-pill" style={{ border: 0, color: "inherit" }}>
-          <span className="mono" style={{ fontSize: 14 }}>
-            {balance}
-          </span>
-          <span
+        {/* Not decoration — clicking it is the fix. The market only exists on
+            Monad testnet, so any other chain means every action would fail. */}
+        {wallet.wrongChain && (
+          <button
+            type="button"
+            className="badge badge-accent"
+            onClick={() => wallet.switchToTestnet()}
+            disabled={wallet.switching}
             style={{
-              width: 1,
-              height: 14,
-              background: "color-mix(in srgb, #f3f2f2 35%, transparent)",
+              border: 0,
+              cursor: "pointer",
+              animation: "pulseDot 1.6s ease-in-out infinite",
             }}
-          />
-          <span className="mono" style={{ fontSize: 12, opacity: 0.7 }}>
-            {address}
-          </span>
+            title="This app runs on Monad testnet only"
+          >
+            {wallet.switching ? "SWITCHING…" : "SWITCH TO MONAD TESTNET"}
+          </button>
+        )}
+
+        <button
+          type="button"
+          className="wallet-pill"
+          style={{ border: 0, color: "inherit" }}
+          onClick={() => (wallet.isConnected ? wallet.disconnect() : wallet.connect())}
+          title={wallet.isConnected ? "Disconnect" : "Connect a wallet"}
+        >
+          {wallet.isConnected ? (
+            <>
+              <span className="mono" style={{ fontSize: 14 }}>
+                {balance}
+              </span>
+              <span
+                style={{
+                  width: 1,
+                  height: 14,
+                  background: "color-mix(in srgb, #f3f2f2 35%, transparent)",
+                }}
+              />
+              <span className="mono" style={{ fontSize: 12, opacity: 0.7 }}>
+                {wallet.short}
+              </span>
+            </>
+          ) : (
+            <span
+              style={{ fontFamily: "var(--font-heading)", fontWeight: 800, fontSize: 13 }}
+            >
+              {wallet.connecting ? "Connecting…" : "Connect wallet"}
+            </span>
+          )}
         </button>
       </div>
     </div>
