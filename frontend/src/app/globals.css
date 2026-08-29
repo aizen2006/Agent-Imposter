@@ -1,26 +1,439 @@
 @import "tailwindcss";
 
+/* ══════════════════════════════════════════════════════════════════════════
+   MODERNIST — design-system tokens.
+   Source of truth: Claude Design project 6b809d94, _ds/modernist-7dfaa098.
+   Retune here; never hard-code a hex, font or spacing value these carry.
+   ══════════════════════════════════════════════════════════════════════ */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --color-bg: #f3f2f2;
+  --color-surface: #eae9e9;
+  --color-text: #201e1d;
+  --color-accent: #ec3013;
+  --color-accent-2: #e15b47;
+  --color-divider: color-mix(in srgb, #201e1d 40%, transparent);
+
+  /* The ground the shell floats on (Playful pass). */
+  --color-ground: #e9e6e4;
+
+  /* Tonal ramps — generated in OKLCH on one shared lightness scale, so the
+     same step of any role matches the others in visual value. */
+  --color-neutral-100: #f8f4f4;
+  --color-neutral-200: #eae7e7;
+  --color-neutral-300: #d7d3d3;
+  --color-neutral-400: #bab6b6;
+  --color-neutral-500: #9b9797;
+  --color-neutral-600: #7d7979;
+  --color-neutral-700: #605d5d;
+  --color-neutral-800: #444141;
+  --color-neutral-900: #2d2b2b;
+
+  --color-accent-100: #fff2ef;
+  --color-accent-200: #ffe0d9;
+  --color-accent-300: #ffc4b8;
+  --color-accent-400: #ff9783;
+  --color-accent-500: #ff563c;
+  --color-accent-600: #dd2b0f;
+  --color-accent-700: #ae1800;
+  --color-accent-800: #7c1405;
+  --color-accent-900: #4d170e;
+
+  --font-heading: var(--font-archivo), "Archivo", system-ui, sans-serif;
+  --font-heading-weight: 800;
+  --font-body: var(--font-archivo), "Archivo", system-ui, sans-serif;
+  --font-mono: ui-monospace, Menlo, Consolas, monospace;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* PLAYFUL PASS deviation — base Modernist is radius 0 throughout.
+     This treatment intentionally softens every corner. See design.md §4. */
+  --radius-sm: 12px;
+  --radius-md: 16px;
+  --radius-lg: 20px;
+  --radius-xl: 22px;
+  --radius-shell: 28px;
+  --radius-pill: 999px;
+
+  --shadow-sm: 0 1px 2px color-mix(in srgb, #2d2b2b 14%, transparent);
+  --shadow-md: 0 3px 10px color-mix(in srgb, #2d2b2b 16%, transparent);
+  --shadow-lg: 0 12px 32px color-mix(in srgb, #2d2b2b 22%, transparent);
+  --shadow-shell: 0 18px 50px rgba(45, 43, 43, 0.18);
+  --shadow-lift: 0 10px 22px rgba(45, 43, 43, 0.14);
+  --shadow-lift-accent: 0 10px 26px rgba(236, 48, 19, 0.26);
+  --shadow-ticket: 0 12px 30px rgba(45, 43, 43, 0.16);
+  --shadow-toast: 0 10px 24px rgba(45, 43, 43, 0.24);
+
+  /* Motion — one easing for the whole system. */
+  --ease: cubic-bezier(0.2, 0, 0.2, 1);
+  --dur-press: 80ms;
+  --dur-fast: 120ms;
+  --dur-base: 160ms;
+  --dur-enter: 300ms;
+
+  /* The crewmate visor never varies by agent. */
+  --visor: #cfe3ef;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-bg: var(--color-bg);
+  --color-surface: var(--color-surface);
+  --color-text: var(--color-text);
+  --color-accent: var(--color-accent);
+  --color-ground: var(--color-ground);
+  --font-sans: var(--font-body);
+  --font-mono: var(--font-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  margin: 0;
+  background: var(--color-ground);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.55;
+  font-weight: 400;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+  line-height: 1.12;
+  letter-spacing: -0.015em;
+  margin: 0 0 var(--space-2);
+}
+h1 { font-size: 42px; }
+h2 { font-size: 32px; }
+h3 { font-size: 25px; }
+h4 { font-size: 20px; }
+h5 { font-size: 16px; }
+h6 { font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; }
+
+a { color: var(--color-accent-700); text-underline-offset: 3px; }
+a:hover { color: var(--color-accent); }
+
+:focus { outline: none; }
+:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+::selection { background: color-mix(in srgb, var(--color-accent) 30%, transparent); }
+
+.mono { font-family: var(--font-mono); }
+.text-muted { color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+
+/* Small caps label used for every section kicker. */
+.kicker {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-neutral-700);
+}
+
+/* ── buttons ─────────────────────────────────────────────────────────── */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  text-decoration: none;
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+  font-size: 14px;
+  line-height: 1.2;
+  color: var(--color-text);
+  background: transparent;
+  border: 1px solid transparent;
+  padding: var(--space-2) calc(var(--space-3) * 1.2);
+  border-radius: var(--radius-pill);
+  transition: transform var(--dur-press) var(--ease), background var(--dur-fast) var(--ease);
+}
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn-primary { background: var(--color-accent); color: var(--color-bg); }
+.btn-primary:hover { background: var(--color-accent-600); }
+.btn-primary:active { background: var(--color-accent-700); }
+.btn-outline { background: var(--color-bg); border-color: var(--color-divider); }
+.btn-outline:hover { background: var(--color-neutral-200); }
+
+/* Chrome button on the match bar. */
+.btn-chrome {
+  background: var(--color-surface);
+  border: 1px solid var(--color-divider);
+}
+.btn-chrome:hover { background: var(--color-neutral-200); transform: translateY(-1px); }
+.btn-chrome:active { transform: translateY(1px); }
+
+/* Scale-press used on the market rows. */
+.btn-pop:hover { transform: scale(1.05); }
+.btn-pop:active { transform: scale(0.95); }
+
+/* The ticket CTA carries a hard offset shadow that compresses on press. */
+.btn-lock {
+  width: 100%;
+  border-radius: var(--radius-pill);
+  padding: 13px 20px;
+  justify-content: space-between;
+  font-size: 15px;
+  box-shadow: 0 6px 0 var(--color-accent-700);
+}
+.btn-lock:hover { transform: translateY(-2px); box-shadow: 0 8px 0 var(--color-accent-700); }
+.btn-lock:active { transform: translateY(4px); box-shadow: 0 2px 0 var(--color-accent-700); }
+
+.input {
+  min-height: 36px;
+  padding: 6px 10px;
+  font: inherit;
+  color: var(--color-text);
+  caret-color: var(--color-accent);
+  background: var(--color-surface);
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-md);
+}
+
+/* ── header ──────────────────────────────────────────────────────────── */
+
+.nav-pill {
+  padding: 7px 14px;
+  border-radius: var(--radius-pill);
+  color: color-mix(in srgb, #f3f2f2 70%, transparent);
+  text-decoration: none;
+  font-size: 13px;
+  transition: all var(--dur-base) var(--ease);
+}
+.nav-pill:hover {
+  background: color-mix(in srgb, #f3f2f2 14%, transparent);
+  color: #f3f2f2;
+}
+.nav-pill[aria-current="page"] {
+  background: color-mix(in srgb, #f3f2f2 16%, transparent);
+  color: var(--color-bg);
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+}
+.nav-pill[aria-current="page"]:hover {
+  background: color-mix(in srgb, #f3f2f2 26%, transparent);
+}
+
+.wallet-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, #f3f2f2 14%, transparent);
+  cursor: pointer;
+  transition: transform var(--dur-press) var(--ease), background var(--dur-fast) var(--ease);
+}
+.wallet-pill:hover { background: color-mix(in srgb, #f3f2f2 22%, transparent); }
+.wallet-pill:active { transform: scale(0.97); }
+
+/* ── rooms ───────────────────────────────────────────────────────────── */
+
+.room {
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  border: 2px solid transparent;
+  padding: 12px 14px;
+  min-height: 140px;
+  display: flex;
+  flex-direction: column;
+  transition: all var(--dur-base) var(--ease);
+}
+.room-interactive { cursor: pointer; }
+.room-interactive:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-lift);
+  border-color: var(--color-neutral-400);
+}
+.room-sabotage {
+  background: var(--color-accent-100);
+  border-color: var(--color-accent);
+  position: relative;
+  overflow: hidden;
+}
+.room-sabotage:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-lift-accent);
+  border-color: var(--color-accent);
+}
+.room-empty { border: 2px dashed var(--color-neutral-300); }
+.room-empty:hover { border-color: var(--color-neutral-500); }
+.room-ghost { background: var(--color-neutral-200); }
+
+.badge {
+  font-size: 9px;
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+}
+.badge-accent { background: var(--color-accent); color: var(--color-bg); }
+.badge-soft { background: var(--color-accent-200); color: var(--color-accent-800); }
+.badge-ghost { background: var(--color-neutral-400); color: var(--color-bg); }
+
+/* Speech bubble tail points at the crewmate to its left. */
+.bubble {
+  border-radius: 12px 12px 12px 4px;
+  padding: 6px 9px;
+  font-size: 11px;
+  background: var(--color-bg);
+}
+
+/* ── crew strip ──────────────────────────────────────────────────────── */
+
+.crew-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 6px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  cursor: pointer;
+  transition: all var(--dur-fast) var(--ease);
+}
+.crew-pill:hover { background: var(--color-neutral-200); transform: translateY(-2px); }
+.crew-pill-flagged { background: var(--color-accent-100); }
+.crew-pill-flagged:hover { background: var(--color-accent-100); transform: translateY(-2px); }
+.crew-pill-dead { background: var(--color-neutral-200); opacity: 0.55; cursor: default; }
+.crew-pill-dead:hover { transform: none; background: var(--color-neutral-200); }
+
+/* ── market ──────────────────────────────────────────────────────────── */
+
+.market-row {
+  position: relative;
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  overflow: hidden;
+  padding: 11px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  transition: all var(--dur-base) var(--ease);
+}
+.market-row:hover {
+  transform: translateX(3px);
+  box-shadow: 0 8px 18px rgba(45, 43, 43, 0.14);
+}
+/* The share bar sits behind the row content; everything else is z-lifted. */
+.market-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  animation: growBar 900ms var(--ease);
+}
+.market-row > *:not(.market-fill) { position: relative; }
+
+.market-note {
+  font-size: 11px;
+  background: var(--color-bg);
+  border-radius: var(--radius-pill);
+  padding: 2px 9px;
+}
+
+/* ── chatter ─────────────────────────────────────────────────────────── */
+
+.chat-bubble {
+  background: var(--color-surface);
+  border-radius: 16px 16px 16px 5px;
+  padding: 9px 12px;
+  transition: transform var(--dur-fast) var(--ease);
+}
+.chat-bubble:hover { transform: translateY(-2px); }
+.chat-bubble-accused { background: var(--color-accent-100); }
+
+.chip {
+  padding: 5px 14px;
+  border-radius: var(--radius-pill);
+  background: var(--color-bg);
+  font-size: 12px;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  transition: all var(--dur-press) var(--ease);
+}
+.chip:hover { background: var(--color-neutral-300); }
+.chip-active { background: var(--color-text); color: var(--color-bg); }
+.chip-active:hover { background: var(--color-text); }
+
+.seg-tab {
+  padding: 4px 12px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  cursor: pointer;
+  color: var(--color-neutral-700);
+  transition: background var(--dur-fast) var(--ease);
+}
+.seg-tab:hover { background: var(--color-neutral-200); }
+.seg-tab-active {
+  background: var(--color-text);
+  color: var(--color-bg);
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+}
+.seg-tab-active:hover { background: var(--color-text); }
+
+/* ── motion ──────────────────────────────────────────────────────────── */
+
+@keyframes bob {
+  0%, 100% { transform: translateY(0) rotate(-1.5deg); }
+  50% { transform: translateY(-5px) rotate(1.5deg); }
+}
+@keyframes waddle {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(6px); }
+}
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.8); }
+}
+@keyframes ringOut {
+  0% { box-shadow: 0 0 0 0 rgba(236, 48, 19, 0.5); }
+  100% { box-shadow: 0 0 0 14px rgba(236, 48, 19, 0); }
+}
+@keyframes tickerIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes toastIn {
+  from { opacity: 0; transform: translateX(24px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes shine {
+  0% { transform: translateX(-6px); opacity: 0.35; }
+  50% { transform: translateX(4px); opacity: 0.85; }
+  100% { transform: translateX(-6px); opacity: 0.35; }
+}
+@keyframes growBar {
+  from { width: 0; }
+}
+@keyframes wobbleStamp {
+  0% { transform: rotate(-4deg) scale(0.94); }
+  60% { transform: rotate(2deg) scale(1.03); }
+  100% { transform: rotate(-2deg) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
