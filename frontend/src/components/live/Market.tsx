@@ -7,11 +7,15 @@ export function Market({
   match,
   selected,
   onSelect,
+  mine = [],
 }: {
   match: Match;
   selected: AgentId;
   onSelect: (id: AgentId) => void;
+  /** Your stake on each agent, indexed 0–5. */
+  mine?: number[];
 }) {
+  const myTotal = mine.reduce((a, b) => a + b, 0);
   return (
     <>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 12 }}>
@@ -36,7 +40,15 @@ export function Market({
           className="mono"
           style={{ marginLeft: "auto", fontSize: 11, color: "var(--color-neutral-600)" }}
         >
-          pool {match.poolMon.toLocaleString()} MON · {match.bettors} bettors
+          pool {match.poolMon.toLocaleString()} MON
+          {myTotal > 0 && (
+            <>
+              {" · "}
+              <strong style={{ color: "var(--color-accent-700)" }}>
+                you {myTotal.toFixed(2)}
+              </strong>
+            </>
+          )}
         </span>
       </div>
 
@@ -44,10 +56,16 @@ export function Market({
         {match.market.map((o) => {
           const a = agent(o.agent);
           const isSelected = selected === o.agent;
+          const staked = mine[a.index] ?? 0;
           return (
             <div
               key={o.agent}
               className="market-row"
+              style={
+                staked > 0
+                  ? { outline: "2px solid var(--color-accent)", outlineOffset: -2 }
+                  : undefined
+              }
               role="button"
               tabIndex={0}
               onClick={() => onSelect(o.agent)}
@@ -72,6 +90,16 @@ export function Market({
               <span style={{ fontFamily: "var(--font-heading)", fontWeight: 800, fontSize: 15 }}>
                 {a.id}
               </span>
+              {/* Your position, called out on the row it belongs to. */}
+              {staked > 0 && (
+                <span
+                  className="badge badge-accent"
+                  style={{ flex: "none" }}
+                  title="Your stake on this agent"
+                >
+                  YOU {staked.toFixed(2)}
+                </span>
+              )}
               <span
                 className="market-note"
                 style={{
@@ -103,7 +131,7 @@ export function Market({
                   onSelect(o.agent);
                 }}
               >
-                {isSelected ? "Selected" : "Bet"}
+                {isSelected ? "Selected" : staked > 0 ? "Add" : "Bet"}
               </button>
             </div>
           );

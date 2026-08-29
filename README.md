@@ -299,6 +299,8 @@ bun --env-file=.env.local src/engine/golden.ts 10 --llm   # re-bake the recorded
 | `GET /api/match/[id]` | Serves a shared match to anyone who did not generate it |
 | `POST /api/game/resolve` | Reveals on-chain from that ticket. Idempotent, and refuses to fire before the match could have finished |
 | `GET /api/stats` | Chain-derived aggregate behind the home page, lobby and leaderboard |
+| `GET /api/health` | Is this deployment actually going to work? Check it before demoing |
+| `GET /api/reap` | Settles matches that finished with nobody watching |
 
 Two routes, no state between them. See [Deploying](#deploying).
 
@@ -410,6 +412,12 @@ Wrong network. The top bar shows a **Switch to Monad testnet** button — click 
 
 **Agents sound generic / repetitive**
 No `OPENAI_API_KEY`, so the stub brain is playing. That's expected.
+
+**Shared links 404 on another device — "No such match"**
+`BLOB_READ_WRITE_TOKEN` is not set, so matches are never published. Hit `/api/health`: if
+`multiplayer.ok` is false it tells you exactly this. Create a Blob store in the Vercel dashboard
+and set the token. Until then the app says so up front — a match reports `shared: false` and the
+invite button is hidden rather than handing out a link that cannot work.
 
 **Lobby and leaderboard are empty**
 No `BLOB_READ_WRITE_TOKEN`, so matches aren't being shared and there is nothing to list. The

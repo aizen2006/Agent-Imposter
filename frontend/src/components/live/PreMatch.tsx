@@ -20,11 +20,15 @@ export function PreMatch({
   marketId,
   startAt,
   onStart,
+  shared = true,
 }: {
   match: Match;
   marketId?: bigint;
   startAt: number;
   onStart: () => void;
+  /** False when the match was never published — inviting someone to a link
+      that 404s is worse than not offering. */
+  shared?: boolean;
 }) {
   const [left, setLeft] = useState(() => Math.max(0, startAt - Date.now()));
 
@@ -102,7 +106,7 @@ export function PreMatch({
             sit down to vote.
           </p>
 
-          <ShareLink />
+          {shared ? <ShareLink /> : <PrivateNote />}
         </div>
       </div>
 
@@ -111,6 +115,16 @@ export function PreMatch({
     </>
   );
 }
+
+const PrivateNote = () => (
+  <span
+    className="mono"
+    style={{ marginLeft: "auto", fontSize: 11, color: "var(--color-neutral-600)" }}
+    title="Set BLOB_READ_WRITE_TOKEN to let other people join"
+  >
+    private match — sharing not configured
+  </span>
+);
 
 /** Getting a second person into the same market is the entire point, so the
     link to do it should not require selecting the address bar. */

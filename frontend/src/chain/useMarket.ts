@@ -92,6 +92,30 @@ export function useGameState(gameId?: bigint) {
   };
 }
 
+/** What *you* have on each agent in this match, indexed 0–5, plus the total.
+
+    The board showed the crowd's money but never your own, so after betting
+    there was nothing on screen saying which agent you had backed or for how
+    much. Polls alongside the pools so a confirmed bet appears without a
+    reload. */
+export function useMyStakes(gameId?: bigint, address?: `0x${string}`) {
+  const { data, refetch } = useReadContract({
+    ...contract,
+    functionName: "stakesOf",
+    args: gameId !== undefined && address ? [gameId, address] : undefined,
+    query: {
+      enabled: gameId !== undefined && Boolean(address),
+      refetchInterval: 5000,
+    },
+  });
+
+  const stakes = ((data ?? new Array(AGENT_COUNT).fill(0n)) as readonly bigint[]).map((s) =>
+    Number(formatEther(s)),
+  );
+
+  return { stakes, total: stakes.reduce((a, b) => a + b, 0), refetch };
+}
+
 export function usePayout(gameId?: bigint, address?: `0x${string}`) {
   const { data, refetch } = useReadContract({
     ...contract,

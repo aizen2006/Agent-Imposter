@@ -9,7 +9,7 @@ import { Market } from "./Market";
 import { Chatter } from "./Chatter";
 import { BetTicket } from "./BetTicket";
 import { RecapStrip } from "./RecapStrip";
-import { usePools } from "@/chain/useMarket";
+import { useMyStakes, usePools, useWallet } from "@/chain/useMarket";
 import { AGENTS, type AgentId, type Match } from "@/lib/match";
 
 export function LiveMatch({ match, marketId }: { match: Match; marketId?: bigint }) {
@@ -19,6 +19,11 @@ export function LiveMatch({ match, marketId }: { match: Match; marketId?: bigint
      them. The projection supplies the rows and the reasoning; the chain
      supplies the money. */
   const { pools, total } = usePools(marketId);
+
+  /* Your own position, so the board can say which agent you backed and for how
+     much. Without it the market showed everyone's money except yours. */
+  const wallet = useWallet();
+  const { stakes: mine, total: myTotal } = useMyStakes(marketId, wallet.address);
   const shown = useMemo(() => {
     if (total <= 0) return match;
     const market = match.market
@@ -79,7 +84,7 @@ export function LiveMatch({ match, marketId }: { match: Match; marketId?: bigint
               }}
             />
 
-            <Market match={shown} selected={selected} onSelect={setSelected} />
+            <Market match={shown} selected={selected} onSelect={setSelected} mine={mine} />
           </div>
 
           <div
@@ -90,7 +95,13 @@ export function LiveMatch({ match, marketId }: { match: Match; marketId?: bigint
             }}
           >
             <Chatter lines={shown.chatter} />
-            <BetTicket match={shown} selected={selected} marketId={marketId} />
+            <BetTicket
+              match={shown}
+              selected={selected}
+              marketId={marketId}
+              mine={mine}
+              myTotal={myTotal}
+            />
           </div>
         </div>
 

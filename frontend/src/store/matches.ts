@@ -51,6 +51,45 @@ const PREFIX = "matches/v1/";
 const viaBlob = () => Boolean(process.env.BLOB_READ_WRITE_TOKEN);
 const dir = () => join(tmpdir(), "imposter-matches");
 
+/* The filesystem backend is for local development only, and saying so is not
+   pedantry — it is the difference between working and appearing to work.
+
+   On Vercel every request may land on a different lambda, each with its own
+   /tmp. A match written there is readable by the instance that wrote it and
+   nobody else, so the creator's tab plays fine while every shared link 404s
+   with "no such match". That is exactly the failure this guard exists to
+   prevent: better to report honestly that a match is not shared than to claim
+   it is and have the link fail on someone else's phone. */
+const onServerless = () => Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+
+let toldYou = false;
+function storageUnavailable(): boolean {
+  if (viaBlob()) return false;
+  if (!onServerless()) return false; // local dev: the filesystem is genuinely shared
+  if (!toldYou) {
+    toldYou = true;
+    console.error(
+      "[matches] BLOB_READ_WRITE_TOKEN is not set. Matches cannot be shared on serverless — " +
+        "each request gets its own /tmp, so shared links would 404 on other devices. " +
+        "Create a Blob store in the Vercel dashboard and set the token.",
+    );
+  }
+  return true;
+}
+
+/** Why sharing is or is not available. Surfaced by /api/health. */
+export function storageStatus(): { ok: boolean; backend: string; reason?: string } {
+  if (viaBlob()) return { ok: true, backend: "vercel-blob" };
+  if (onServerless()) {
+    return {
+      ok: false,
+      backend: "none",
+      reason: "BLOB_READ_WRITE_TOKEN is not set — matches cannot be shared on serverless",
+    };
+  }
+  return { ok: true, backend: "filesystem (local dev only)" };
+}
+
 /* Metadata lives in the name so the lobby can list every match without
    downloading any of them — one round trip then answers "what is playing right
    now". Fetching 20 bodies to build a list page would be absurd. Fixed field
@@ -79,6 +118,8 @@ export function decode(name: string): MatchMeta | null {
 
 /** Never throws. Returns the meta actually written, or null if storage failed. */
 export async function putMatch(m: StoredMatch): Promise<MatchMeta | null> {
+  if (storageUnavailable()) return null;
+
   const body = JSON.stringify(m);
   try {
     if (viaBlob()) {
@@ -104,6 +145,7 @@ export async function putMatch(m: StoredMatch): Promise<MatchMeta | null> {
 
 /** Newest first. Cheap: one listing, no bodies read. */
 export async function listMatches(limit = 40): Promise<MatchMeta[]> {
+  if (storageUnavailable()) return [];
   try {
     const names = viaBlob()
       ? (await list({ prefix: PREFIX, limit: 200 })).blobs.map((b) => b.pathname)
@@ -121,7 +163,7 @@ export async function listMatches(limit = 40): Promise<MatchMeta[]> {
 }
 
 export async function getMatch(id: string): Promise<StoredMatch | null> {
-  if (!/^[a-z0-9]+$/i.test(id)) return null;
+  if (!/^[a-z0-9]+$/i.test(id) || storageUnavailable()) return null;
   try {
     if (viaBlob()) {
       const { blobs } = await list({ prefix: PREFIX, limit: 200 });

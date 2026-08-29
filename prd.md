@@ -1447,3 +1447,25 @@ a CLAIMED badge; refresh stats when a claim confirms rather than waiting out the
 
 The lesson worth keeping: **"resolved" is not the same as "immutable".** A settled game still
 has state that moves.
+
+## 16.8 Two more from testing on a real device
+
+**The shared link 404'd on another phone.** The filesystem fallback added in §15 for local
+development was also running in production. On Vercel each request may land on a different
+lambda with its own `/tmp`, so `putMatch` succeeded, reported `shared: true`, and the match was
+readable by exactly one instance. The creator's tab played fine — it never needed the store —
+while every shared link failed.
+
+The fallback now refuses to run on serverless (`VERCEL` / `AWS_LAMBDA_FUNCTION_NAME`) and says
+why. A match that cannot be published reports `shared: false` with a reason, and the invite
+button is replaced by *"private match — sharing not configured"*. `/api/health` diagnoses the
+whole deployment in one request: storage, chain id, resolver key shape, model key.
+
+The general lesson: **a development fallback that silently activates in production is worse than
+no fallback.** It converts a startup error into a bug reported by a stranger.
+
+**The board never showed your own money.** It displayed the crowd's pool and odds but nothing
+about which agent you had backed or for how much, so after betting there was no confirmation
+anywhere on screen. `useMyStakes` reads `stakesOf(gameId, you)` alongside the pools; rows you
+hold get an accent outline and a `YOU 0.30` badge, the Bet button becomes *Add*, and the ticket
+header lists the whole position.

@@ -4,7 +4,7 @@ import { seal } from "@/chain/ticket";
 import { project } from "@/engine/project";
 import { LOBBY_MS, planPlayback } from "@/engine/timing";
 import { createGame } from "@/store/games";
-import { putMatch, sweep } from "@/store/matches";
+import { putMatch, storageStatus, sweep } from "@/store/matches";
 
 export const runtime = "nodejs";
 /** Generation is the only slow part: ~23s with real models, ~1s with the stub.
@@ -91,6 +91,9 @@ export async function POST(req: Request) {
   return NextResponse.json({
     id: game.id,
     shared: Boolean(shared),
+    // If this is false the link is private — say why, rather than handing out
+    // a URL that 404s on someone else's device.
+    shareReason: shared ? undefined : storageStatus().reason,
     startedAt,
     marketId: game.numericId.toString(),
     events: game.events.length,

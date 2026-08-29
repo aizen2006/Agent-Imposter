@@ -4,7 +4,13 @@ import { useEffect, useState } from "react";
 import { Crewmate } from "@/components/Crewmate";
 import { explorerTx } from "@/chain/monad";
 import { useGameState, useMarketWrite, usePayout, useWallet } from "@/chain/useMarket";
-import { agent, formatClock, type AgentId, type Match } from "@/lib/match";
+import { AGENTS, agent, formatClock, type AgentId, type Match } from "@/lib/match";
+
+/** Contract agent index -> name. The index order is fixed (ATLAS 0 … FLINT 5)
+    and is what bet() takes, so this is a lookup, not a mapping to maintain. */
+const AGENT_BY_INDEX: Record<number, string> = Object.fromEntries(
+  Object.values(AGENTS).map((a) => [a.index, a.id]),
+);
 
 const QUICK = [0.05, 0.1, 0.5];
 
@@ -12,10 +18,15 @@ export function BetTicket({
   match,
   selected,
   marketId,
+  mine = [],
+  myTotal = 0,
 }: {
   match: Match;
   selected: AgentId;
   marketId?: bigint;
+  /** Your stake on each agent, indexed 0–5. */
+  mine?: number[];
+  myTotal?: number;
 }) {
   const [stake, setStake] = useState(0.1);
   const wallet = useWallet();
@@ -24,6 +35,7 @@ export function BetTicket({
   const { payout, refetch: refetchPayout } = usePayout(marketId, wallet.address);
 
   const a = agent(selected);
+  const onThis = mine[a.index] ?? 0;
   const outcome = match.market.find((m) => m.agent === selected);
   const odds = outcome?.odds ?? 1;
   const potential = stake * odds;
@@ -48,6 +60,33 @@ export function BetTicket({
           padding: 16,
         }}
       >
+        {/* Your position across the whole match, so the ticket is never the
+            only thing on screen and your own money is invisible. */}
+        {myTotal > 0 && (
+          <div
+            className="mono"
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 8,
+              marginBottom: 12,
+              paddingBottom: 10,
+              borderBottom: "1px solid var(--color-neutral-300)",
+              fontSize: 12,
+              color: "var(--color-neutral-700)",
+            }}
+          >
+            <span>your position</span>
+            <span>
+              {mine
+                .map((v, i) => ({ v, i }))
+                .filter((x) => x.v > 0)
+                .map((x) => `${AGENT_BY_INDEX[x.i] ?? `#${x.i}`} ${x.v.toFixed(2)}`)
+                .join(" · ")}
+            </span>
+          </div>
+        )}
+
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
           <Crewmate hue={a.hue} h={34} motion="bob" duration={3} />
           <div style={{ flex: 1 }}>
@@ -55,7 +94,8 @@ export function BetTicket({
               {resolved ? "Market settled" : `${a.id} is the Imposter`}
             </div>
             <div className="mono" style={{ fontSize: 11, color: "var(--color-neutral-700)" }}>
-              R{match.round} · {odds.toFixed(2)}× ·{" "}
+              R{match.round} · {odds.toFixed(2)}×
+              {onThis > 0 ? ` · you hold ${onThis.toFixed(2)}` : ""} ·{" "}
               {resolved
                 ? "claim below"
                 : match.closesIn > 0

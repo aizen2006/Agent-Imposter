@@ -37,9 +37,14 @@ export function StartMatch() {
         market: data.market,
       });
 
+      /* If the match could not be published, say so here rather than letting
+         someone share a link that 404s on another device. */
       setNote(
-        `${events} events in ${(generatedInMs / 1000).toFixed(1)}s — ${brain}. Betting is open.`,
+        data.shared
+          ? `${events} events in ${(generatedInMs / 1000).toFixed(1)}s — ${brain}. Betting is open.`
+          : `Generated, but this match is private: ${data.shareReason ?? "sharing is not configured"}.`,
       );
+      setState(data.shared ? "idle" : "failed");
       router.push(`/game/${id}`);
     } catch {
       setState("failed");
