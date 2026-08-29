@@ -1,0 +1,988 @@
+# AGENT IMPOSTER — PRD v3
+
+## 6-Hour Hackathon Build Spec
+
+> **Six AI agents. One is the Imposter. Watch the lies. Bet your conviction.**
+
+**This document is a build spec, not a vision doc.** Every open question is answered, every
+feature is either in or cut, and the hour-by-hour plan below is the schedule. The full product
+vision lives in [docs/prd-v2-vision.md](docs/prd-v2-vision.md) — read that for the *why*, read
+this for the *what to type*.
+
+| | |
+|---|---|
+| **Build budget** | 6 hours, solo |
+| **Chain** | Monad testnet |
+| **Contract deploy** | Remix (browser) — no Foundry |
+| **Agents** | LangChain TS + OpenAI (`gpt-4o-mini` actions, `gpt-4o` dialogue) |
+| **Stack** | Next.js 16 + React 19 + TypeScript + Tailwind v4 + wagmi/viem |
+| **Game length** | ~81s playback measured, 3 rounds |
+
+---
+
+# 1. Product in Five Lines
+
+Six AI agents work a hackathon office. One is secretly the Imposter. The Imposter fakes tasks,
+sabotages systems, and eliminates agents when caught alone with them. The crew investigates,
+argues, and votes. Humans never control anything — they watch the simulation and stake MON on
+who they think the traitor is, and a Monad contract settles the pool at the reveal.
+
+**Core loop:** Move → Work → Sabotage → Discover → Debate → Bet → Vote → Reveal → Settle
+
+**North star:** after one game, does someone say *"run another one"*?
+
+---
+
+# 2. The Three Architectural Bets
+
+Everything in this spec follows from these. Do not relitigate them mid-build.
+
+## 2.1 Simulate-then-Stream
+
+**Do not build a live real-time engine.** When someone clicks START, generate the *entire* game
+server-side into an event log (~60–90s of LLM calls), then stream that log to the browser on a
+timer as though it were happening live.
+
+Why this is the decision that makes 6 hours possible:
+
+- The demo cannot stall on LLM latency, a rate limit, or a bad JSON parse — all of that happens
+  before the first frame renders.
+- The frontend becomes a dumb playback player. No state reconciliation, no optimistic updates,
+  no partial-round rendering.
+- Betting runs against a deterministic timeline, so "market closes at the final meeting" is a
+  timestamp, not a race condition.
+- You can cache one good game to disk and demo with the wifi off.
+
+The agents are still genuinely autonomous — they made real decisions under real hidden
+information. You are only decoupling *generation* from *presentation*. Nobody watching can tell,
+and it removes the top three ways a live AI demo dies on stage.
+
+## 2.2 One Next.js app, no separate backend
+
+The engine lives in `src/engine/` and is called from route handlers. One process, one deploy, no
+CORS, no ports, no service discovery. Saves ~45 minutes of pure plumbing.
+
+## 2.3 No database
+
+A module-level `Map<string, Game>` in `src/store/games.ts`. Games are ephemeral. A DB buys you
+nothing in six hours and costs you schema, migrations, and a connection string.
+
+---
+
+# 3. Locked Rules
+
+These were open in v2. They are now decided.
+
+| Question | Decision | Rationale |
+|---|---|---|
+| Nobody bet on the real Imposter | **Refund everyone pro-rata** | 6 lines of Solidity; kills the worst demo outcome (money vanishes) |
+| Kill cooldown | **Max 1 per round, none in Round 1** | Round-1 kills land before the audience knows anyone's name — it kills the betting hook |
+| Kill legality | **Imposter + target must be the only two ALIVE agents in the room** | Makes the map matter, prevents absurd kills in a crowd, generates a real suspect list |
+| Tie vote | **No elimination** | Easiest rule to explain to an audience |
+| Imposter voted out early | Game resolves immediately; market closes at that instant | Rare, and a legitimately great story |
+| Do tasks gate a win? | **No — tasks are evidence generation only** | A task-completion win condition is a second system you do not have time for |
+| Market close | **Start of the Round 3 meeting**, or resolution, whichever is first | One condition, one countdown |
+| Protocol fee | **Zero** | Nothing to explain, nothing to debug |
+| Crew win | Imposter is voted out | |
+| Imposter win | Imposter survives Round 3 | |
+
+## 3.1 Final action sets
+
+Five verbs each. This is enough to produce drama.
+
+- **Crew:** `MOVE` · `TASK` · `WAIT`
+- **Imposter:** `MOVE` · `FAKE_TASK` · `SABOTAGE` · `KILL` · `WAIT`
+
+## 3.2 Rooms and adjacency
+
+Six rooms. Adjacency is a hand-written graph — no pathfinding. Agents move one room per action.
+
+> **Names superseded — see §11.7.** The shipped UI uses Standup Room · Server Closet · Kitchen ·
+> Whiteboard · Pods · Demo Stage. Keep the graph shape below, rename the nodes.
+
+```
+MAIN_HALL     ↔ DEV_ROOM, SERVER_ROOM, PANTRY, MEETING_ROOM
+DEV_ROOM      ↔ MAIN_HALL, SERVER_ROOM
+SERVER_ROOM   ↔ MAIN_HALL, DEV_ROOM, SECURITY_ROOM
+SECURITY_ROOM ↔ SERVER_ROOM, MAIN_HALL
+PANTRY        ↔ MAIN_HALL
+MEETING_ROOM  ↔ MAIN_HALL       (engine teleports everyone in for meetings)
+```
+
+## 3.3 Forced drama schedule
+
+Do not leave the story to chance. The engine *requires* these beats:
+
+- **Round 1** — sabotage fires at the end of the action phase; no kill permitted
+- **Round 2** — Imposter must attempt a kill if any legal target exists
+- **Round 3** — Imposter kills if legal, otherwise plays the meeting
+
+If the LLM Imposter declines a legal kill in Round 2, **the engine overrides and executes it**.
+The audience needs a body.
+
+---
+
+# 4. Cut List
+
+Deleted from v2. If you find yourself building one of these, stop.
+
+`FRAME` · `INVESTIGATE` · `FOLLOW` · `REPORT` · modeled suspicion scores · 7-attribute trait
+vectors (fold personality into one prompt string) · multi-pass meeting turn-taking · SQLite /
+Postgres · separate backend service · the 5-scenario system (ship **one**: Server Sabotage) ·
+Best Detective in the post-game · Foundry · sound.
+
+---
+
+# 5. Directory Structure
+
+```
+agent_imposter/
+├── prd.md                             # this file
+├── docs/
+│   └── prd-v2-vision.md               # the original product vision
+│
+├── contract/                          # a record, not a build target
+│   ├── ImposterMarket.sol             # copy of what you pasted into Remix
+│   └── deployed.json                  # { address, chainId, deployedAt }
+│
+└── frontend/                          # Next.js 15 — UI *and* engine
+    ├── .env.local                     # ANTHROPIC_API_KEY, RESOLVER_PK, NEXT_PUBLIC_CONTRACT
+    ├── package.json
+    ├── public/
+    │   └── golden-game.json           # the demo safety net
+    └── src/
+        ├── app/
+        │   ├── page.tsx                       # lobby: [ START NEW GAME ]
+        │   ├── game/[id]/page.tsx              # the whole game view
+        │   └── api/game/
+        │       ├── route.ts                    # POST → simulate full game, return id
+        │       └── [id]/
+        │           ├── stream/route.ts         # GET SSE → replays event log on a timer
+        │           └── resolve/route.ts        # POST → resolver tx to Monad
+        │
+        ├── engine/
+        │   ├── types.ts               # Game, Agent, GameEvent, Action    ← write first
+        │   ├── config.ts              # ROOMS, ADJACENCY, TASKS, AGENTS
+        │   ├── rules.ts               # legalActions() + validate()
+        │   ├── brain-stub.ts          # random legal action — never deleted
+        │   ├── simulate.ts            # runGame() → GameEvent[]           ← the heart
+        │   └── project.ts             # project(events, upto) → Match     ← the seam (§7.2)
+        │
+        ├── agents/
+        │   ├── personalities.ts       # 6 prompt profiles, one string each
+        │   ├── brain.ts               # decide() + speak() — falls back to the stub
+        │   └── memory.ts              # buildView(agent, events)
+        │
+        ├── components/                # ✅ BUILT — documented in design.md
+        │   ├── Crewmate.tsx           # Crewmate / CrewmateGhost / CrewBlob
+        │   └── live/                  # TopBar, MatchBar, OfficeMap, CrewStrip, Market,
+        │                              # Chatter, BetTicket, RecapStrip, LiveMatch
+        │
+        ├── chain/
+        │   ├── abi.ts                 # pasted from Remix, `as const`
+        │   ├── monad.ts               # monad testnet chain def + wagmi config
+        │   └── useMarket.ts           # pools / bet / claim hooks
+        │
+        ├── store/games.ts             # Map<string, Game> — module singleton
+        └── lib/match.ts               # ✅ BUILT — the UI's data contract
+```
+
+**Two files carry the project:** `engine/simulate.ts` and `agents/brain.ts`. Everything else is
+glue or pixels. If you fall behind, protect the time on those two.
+
+---
+
+# 6. Data Model
+
+Write `types.ts` first. Everything else conforms to it.
+
+```ts
+export type RoomId =
+  | "MAIN_HALL" | "DEV_ROOM" | "SERVER_ROOM"
+  | "SECURITY_ROOM" | "PANTRY" | "MEETING_ROOM";
+
+export type Role = "CREW" | "IMPOSTER";
+
+export type ActionType =
+  | "MOVE" | "TASK" | "WAIT"
+  | "FAKE_TASK" | "SABOTAGE" | "KILL";
+
+export interface Agent {
+  id: number;             // 0..5 — same index the contract uses
+  name: string;           // "Sherlock"
+  emoji: string;          // "🕵️"
+  role: Role;             // SERVER ONLY. Never crosses the wire.
+  room: RoomId;
+  alive: boolean;
+}
+
+export type GameEvent =
+  | { t: "GAME_STARTED";   round: 0 }
+  | { t: "AGENT_MOVED";    round: number; agentId: number; to: RoomId }
+  | { t: "TASK_DONE";      round: number; agentId: number; room: RoomId; task: string }
+  | { t: "SABOTAGE";       round: number; room: RoomId; what: string }
+  | { t: "KILL";           round: number; victimId: number; room: RoomId }   // killer hidden
+  | { t: "BODY_FOUND";     round: number; victimId: number; room: RoomId; finderId: number }
+  | { t: "MEETING_START";  round: number }
+  | { t: "SAID";           round: number; agentId: number; text: string }
+  | { t: "VOTE";           round: number; agentId: number; targetId: number }
+  | { t: "ELIMINATED";     round: number; agentId: number; role: Role }      // role revealed
+  | { t: "NO_ELIMINATION"; round: number }
+  | { t: "RESOLVED";       round: number; imposterId: number; crewWon: boolean };
+
+export interface Game {
+  id: string;
+  numericId: bigint;      // what the contract sees
+  agents: Agent[];
+  events: GameEvent[];    // the ONLY state that matters
+  imposterId: number;     // SERVER ONLY
+  salt: `0x${string}`;    // SERVER ONLY — commit/reveal
+  closeAt: number;        // unix seconds, betting deadline
+  createdAt: number;
+}
+```
+
+## 6.1 The event log is the only state
+
+Everything the UI renders, everything an agent knows, and the entire replay derive from
+`GameEvent[]`. There is no second source of truth. This is what keeps the codebase small enough
+to finish.
+
+## 6.2 Information model — one function
+
+`buildView(agent, events)` filters the log down to what *this* agent could have witnessed. It is
+the entirety of the hidden-information system and the only place a role can leak.
+
+```
+An agent sees an event if:
+  - it is MEETING_START / SAID / VOTE / ELIMINATED / SABOTAGE   (public)
+  - OR it happened in the room the agent was in at that time     (witnessed)
+Plus, if agent.role === "IMPOSTER": their own KILL events.
+KILL events for everyone else render as "X is missing" with no killer.
+```
+
+Roughly 20 lines. Write it carefully — it is the rule that makes the game a *deduction* game
+rather than a chat log.
+
+## 6.3 Redaction
+
+**`engine/project.ts` is the single choke point between server and browser.** A `Game` is never
+serialized; only the `Match` that `project()` returns crosses the wire, and `Match` has no field
+to put `imposterId` or `salt` in.
+
+That is the whole defence, and it works because of a structural property rather than a
+discipline: the projection's output type simply cannot express the secret. Before folding a
+`RESOLVED` event, no agent in the output carries a role.
+
+Two rules follow:
+
+- Never add `role`, `imposterId` or `salt` to the `Match` type in `lib/match.ts`. Reveal state
+  arrives as a `RESOLVED` event like everything else.
+- Never send raw `GameEvent[]` to the client either — the SSE stream emits projected snapshots
+  (or public events only). A `KILL` event names its victim, never its killer, but the raw log is
+  still server-shaped data.
+
+If `imposterId` reaches the browser before the reveal, the product is broken — someone will open
+devtools on stage. Grep for it in `src/app` and `src/components` before demoing.
+
+---
+
+# 7. The Simulation
+
+`runGame()` is a plain async function. Pseudocode, in order:
+
+```
+assign roles (random imposter), random starting rooms
+emit GAME_STARTED
+
+for round in 1..3:
+    ── ACTION PHASE ──
+    for each alive agent, IN PARALLEL:
+        view    = buildView(agent, events)
+        options = legalActions(agent, state, round)
+        action  = await decide(agent, view, options)     // LLM, or stub on failure
+        validate + apply  →  emit events
+
+    apply forced drama schedule (§3.3)
+    if a body is in a room with a living agent → emit BODY_FOUND
+
+    ── MEETING PHASE ──
+    emit MEETING_START
+    for each alive agent, SEQUENTIALLY:                  // each sees prior statements
+        text = await speak(agent, view, transcriptSoFar)
+        emit SAID
+
+    for each alive agent, IN PARALLEL:
+        emit VOTE
+
+    tally → highest unique wins; tie = NO_ELIMINATION
+    on elimination: emit ELIMINATED with role revealed
+    if eliminated agent was IMPOSTER → break
+
+emit RESOLVED
+```
+
+**Parallel where possible, sequential only for the meeting.** Actions have no ordering
+dependency, so `Promise.all` all six. Meeting statements *do* — Chaos saying "that is not what I
+saw" only works if he read what Politician just said.
+
+Expected wall time: ~15–25s per round, 60–90s total.
+
+## 7.1 Playback timing
+
+The SSE route walks the event log and emits on a schedule so the game reads as live:
+
+| Event | Delay after previous |
+|---|---|
+| `AGENT_MOVED` | 600 ms |
+| `TASK_DONE` / `SABOTAGE` | 900 ms |
+| `KILL` / `BODY_FOUND` | 1800 ms — let it land |
+| `SAID` | 1400 ms |
+| `VOTE` | 400 ms |
+| `ELIMINATED` | 2500 ms — the reveal beat |
+
+Total lands near 150 seconds. Tune these numbers last, when you can watch a real game.
+
+## 7.1b Three rules the spec did not predict
+
+Found by running 300 games against the stub brain. Each one was measured, not
+guessed, and each is load-bearing — remove any of them and the game degrades in a way
+that is invisible in a single playthrough.
+
+**Disperse after every meeting.** Meetings pull all survivors into one room. If the next
+round starts from there they never separate, and "alone together" — the only condition
+under which a kill is legal — effectively never occurs. *Measured: 74% of games contained
+no kill at all.* Survivors now scatter to distinct rooms at the top of each round.
+
+**The engine walks a passive Imposter into the opportunity.** §3.3 says the engine
+overrides an Imposter that declines a legal kill. That is not enough: a wandering Imposter
+never *creates* a legal kill in the first place. `forceKill` now relocates it to an adjacent
+room holding exactly one crew member, then kills. The relocation emits an ordinary
+`AGENT_MOVED`, so it is public evidence like any other move — the engine manufactures the
+opportunity, never a kill that breaks the alone-together rule. *Zero-kill games: 74% → 5.3%,
+the remainder being the crew legitimately ejecting the Imposter in round 1.*
+
+**The killer can never find its own victim.** A kill requires isolation, so immediately
+afterwards the killer is the only living agent in the room — making it the finder every
+single time. `finderId` would be a perfect tell and an LLM crew would solve every game on
+the first body. `bodyFinder` now excludes the killer. That alone left *86% of kills
+undiscovered*, so a roll call at the top of each meeting accounts for anyone who did not
+turn up, wherever they were left. Bodies found: 100%, self-reports: 0.
+
+## 7.2 Projection — events to screen
+
+The engine emits a **chronological log**. The UI renders a **snapshot**: which rooms hold whom,
+what the market shares are, which chat lines exist so far. Those are different shapes, and
+something has to convert one into the other.
+
+```ts
+// engine/project.ts
+export function project(events: GameEvent[], upto: number): Match
+```
+
+A pure fold over the first `upto` events producing the `Match` object that
+[frontend/src/lib/match.ts](frontend/src/lib/match.ts) already defines and every component
+already consumes. It is the single seam between engine and UI.
+
+Getting this right buys three things at once:
+
+- **Playback is just an index.** The SSE stream advances `upto`; the UI re-projects. No
+  incremental state patching, no ordering bugs.
+- **Scrubbing and replay come free.** "Watch the replay" on the recap strip is
+  `project(events, n)` for a smaller `n`.
+- **`golden-game.json` is just an event array.** The demo fallback and the live path run the
+  identical code.
+
+Build it against the stub-brain log in Stage 2 before any LLM exists — it is pure, so it is the
+one part of this system that is genuinely easy to check.
+
+> **The redaction rule lives here.** `project()` runs on the server and must never write
+> `imposterId` into its output until it has folded a `RESOLVED` event. Everything the design
+> shows — the accused ring, the flagged crew pill, market shares — derives from public events
+> only. This function is the choke point §6.3 describes; there is no second one.
+
+---
+
+# 8. The Agent Brain
+
+Two call sites only: `decide()` for actions, `speak()` for meeting statements.
+
+## 8.1 Structured output
+
+```ts
+import Anthropic from "@anthropic-ai/sdk";
+import { z } from "zod";
+import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
+
+const Decision = z.object({
+  action: z.enum(["MOVE","TASK","WAIT","FAKE_TASK","SABOTAGE","KILL"]),
+  target: z.string().nullable(),   // room id or agent name — engine resolves + validates
+  say:    z.string().max(140),     // public line; may be a lie
+});
+
+const res = await client.messages.parse({
+  model: "claude-opus-5",
+  max_tokens: 1024,
+  output_config: {
+    format: zodOutputFormat(Decision),
+    effort: "low",                 // 5-way choice — low effort keeps generation under 90s
+  },
+  system: personality(agent) + RULES,
+  messages: [{ role: "user", content: renderView(view, options) }],
+});
+```
+
+**Effort is the latency lever.** Use `low` for action selection — it is a five-way choice and the
+reasoning does not show. Use the default (`high`) for `speak()`, where the writing quality *is*
+the product. That split is worth ~40 seconds of generation time.
+
+## 8.2 The LLM never mutates state
+
+The model *requests*; the engine *adjudicates*. `decide()` returns an intent, `rules.ts`
+validates it against the real board, and only the engine emits events. If the model asks to kill
+someone two rooms away, the engine silently downgrades to `WAIT`. This is the hard separation
+that keeps the simulation coherent.
+
+## 8.3 Failure is not allowed to stop the game
+
+```
+try   → LLM call with an 8s timeout
+catch → retry once
+catch → stubDecide()   // random legal action, weighted toward MOVE
+```
+
+`stubDecide()` is written in Hour 1 and never deleted. It is both the development harness and
+the production fallback.
+
+## 8.4 Personalities
+
+Six prompt strings, ~40 words each. Not different models, not trait vectors — one paragraph of
+voice each.
+
+🕵️ **Sherlock** analytical, cites evidence · 🤡 **Chaos** provocative, unserious, often right by
+accident · 🎩 **Politician** evasive, reframes every accusation · 🤓 **Hacker** technical,
+paranoid, precise about timestamps · 🗿 **Uncle** blunt, short sentences, deeply suspicious ·
+🤑 **Degen** overconfident, commits hard to bad reads
+
+The Imposter gets an appended paragraph: they know their role, they know deception is the goal,
+and they must never state it.
+
+---
+
+# 9. Smart Contract
+
+Parimutuel pool, four functions, deployed from **Remix**. No Foundry, no imports, no
+dependencies — it compiles instantly in the browser.
+
+## 9.1 Commit–reveal
+
+One addition beyond v2. The backend simulates the whole game *before* betting opens, so the
+resolver knows the answer the entire time. A judge will ask about this. Committing
+`keccak256(imposterId, salt)` at `createGame` and verifying it at `resolve` proves the outcome
+was fixed before a single MON was staked. Three lines, and it is the strongest crypto detail in
+the project.
+
+## 9.2 ImposterMarket.sol
+
+```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+/// @title ImposterMarket — Parimutuel prediction market for Agent Imposter on Monad
+/// @notice Bet MON on which of 6 agents is the hidden Imposter. Winners split the pool.
+/// @dev The imposter is committed at createGame and verified at resolve, so the outcome
+///      is provably fixed before any stake is placed. If the resolver never returns,
+///      `abandon` opens the game for refunds without anyone's permission.
+contract ImposterMarket {
+    uint8 public constant AGENT_COUNT = 6;
+
+    /// @notice Sentinel for "no imposter revealed yet". Never a valid agent index,
+    ///         so a caller reading `games(id)` before resolution cannot mistake the
+    ///         default for an accusation of agent 0.
+    uint8 public constant NO_AGENT = type(uint8).max;
+
+    /// @notice How long after betting closes the resolver has to resolve before
+    ///         anyone may open the game for refunds.
+    uint64 public constant RESOLVE_WINDOW = 24 hours;
+
+    struct Game {
+        uint64 closeAt; // betting closes at this unix timestamp
+        bool exists;
+        bool resolved;
+        bool abandoned; // resolved via timeout — everyone is refunded their stake
+        uint8 imposterId; // NO_AGENT until resolved
+        bytes32 commitment; // keccak256(abi.encodePacked(gameId, imposterId, salt))
+        uint256 totalPool;
+    }
+
+    address public resolver;
+
+    mapping(uint256 => Game) public games;
+    mapping(uint256 => uint256[AGENT_COUNT]) private _agentPool;
+    mapping(uint256 => mapping(address => uint256[AGENT_COUNT])) private _stake;
+    mapping(uint256 => mapping(address => uint256)) private _staked;
+    mapping(uint256 => mapping(address => bool)) public claimed;
+
+    event GameCreated(uint256 indexed gameId, uint64 closeAt, bytes32 commitment);
+    event BetPlaced(uint256 indexed gameId, address indexed user, uint8 agentId, uint256 amount);
+    event GameResolved(uint256 indexed gameId, uint8 imposterId);
+    event GameAbandoned(uint256 indexed gameId);
+    event Claimed(uint256 indexed gameId, address indexed user, uint256 amount);
+    event ResolverChanged(address indexed from, address indexed to);
+
+    modifier onlyResolver() {
+        require(msg.sender == resolver, "not resolver");
+        _;
+    }
+
+    /// @param _resolver Backend wallet authorized to create and resolve games (0x0 defaults to deployer)
+    constructor(address _resolver) {
+        resolver = _resolver == address(0) ? msg.sender : _resolver;
+        emit ResolverChanged(address(0), resolver);
+    }
+
+    function setResolver(address r) external onlyResolver {
+        require(r != address(0), "zero address");
+        emit ResolverChanged(resolver, r);
+        resolver = r;
+    }
+
+    /// @notice Initialize a match.
+    /// @param commitment keccak256(abi.encodePacked(gameId, imposterId, salt)) — required.
+    ///        The salt must be 32 bytes of CSPRNG output. With only six possible imposter
+    ///        values, a guessable salt makes the commitment a six-try brute force.
+    function createGame(uint256 gameId, uint64 closeAt, bytes32 commitment) external onlyResolver {
+        require(!games[gameId].exists, "game exists");
+        require(closeAt > block.timestamp, "closeAt in past");
+        require(commitment != bytes32(0), "commitment required");
+        games[gameId] = Game({
+            closeAt: closeAt,
+            exists: true,
+            resolved: false,
+            abandoned: false,
+            imposterId: NO_AGENT,
+            commitment: commitment,
+            totalPool: 0
+        });
+        emit GameCreated(gameId, closeAt, commitment);
+    }
+
+    /// @notice Stake native MON on an agent index (0..5)
+    /// @dev The resolver knows the answer from the moment the game is simulated, so it
+    ///      is barred from its own market.
+    function bet(uint256 gameId, uint8 agentId) external payable {
+        require(msg.sender != resolver, "resolver cannot bet");
+
+        Game storage g = games[gameId];
+        require(g.exists, "no game");
+        require(!g.resolved, "resolved");
+        require(block.timestamp < g.closeAt, "betting closed");
+        require(agentId < AGENT_COUNT, "bad agent");
+        require(msg.value > 0, "zero stake");
+
+        _agentPool[gameId][agentId] += msg.value;
+        _stake[gameId][msg.sender][agentId] += msg.value;
+        _staked[gameId][msg.sender] += msg.value;
+        g.totalPool += msg.value;
+
+        emit BetPlaced(gameId, msg.sender, agentId, msg.value);
+    }
+
+    /// @notice Reveal the imposter. Also closes betting early (crew wins before the last round).
+    /// @dev The commitment is verified unconditionally — there is no bypass.
+    function resolve(uint256 gameId, uint8 imposterId, bytes32 salt) external onlyResolver {
+        Game storage g = games[gameId];
+        require(g.exists, "no game");
+        require(!g.resolved, "already resolved");
+        require(imposterId < AGENT_COUNT, "bad agent");
+        require(
+            keccak256(abi.encodePacked(gameId, imposterId, salt)) == g.commitment,
+            "commitment mismatch"
+        );
+
+        g.resolved = true;
+        g.imposterId = imposterId;
+        emit GameResolved(gameId, imposterId);
+    }
+
+    /// @notice Permissionless escape hatch. If the resolver never came back within
+    ///         RESOLVE_WINDOW of the market closing, anyone may open the game so every
+    ///         bettor can withdraw their original stake.
+    function abandon(uint256 gameId) external {
+        Game storage g = games[gameId];
+        require(g.exists, "no game");
+        require(!g.resolved, "already resolved");
+        require(block.timestamp > g.closeAt + RESOLVE_WINDOW, "too early");
+
+        g.resolved = true;
+        g.abandoned = true;
+        emit GameAbandoned(gameId);
+    }
+
+    /// @notice Pro-rata payout. Full refund if the game was abandoned, or if nobody
+    ///         backed the imposter.
+    function payoutOf(uint256 gameId, address user) public view returns (uint256) {
+        Game storage g = games[gameId];
+        if (!g.resolved || claimed[gameId][user]) return 0;
+
+        // Must precede any use of imposterId: an abandoned game never set one, and
+        // _agentPool[gameId][NO_AGENT] would revert on a 6-element array.
+        if (g.abandoned) return _staked[gameId][user];
+
+        uint256 winPool = _agentPool[gameId][g.imposterId];
+        if (winPool == 0) return _staked[gameId][user];
+
+        return (g.totalPool * _stake[gameId][user][g.imposterId]) / winPool;
+    }
+
+    /// @notice Withdraw winnings or refunds
+    function claim(uint256 gameId) external {
+        require(games[gameId].resolved, "unresolved");
+        require(!claimed[gameId][msg.sender], "already claimed");
+
+        uint256 payout = payoutOf(gameId, msg.sender);
+        require(payout > 0, "nothing to claim");
+
+        claimed[gameId][msg.sender] = true; // effects before interaction
+
+        (bool ok, ) = msg.sender.call{value: payout}("");
+        require(ok, "transfer failed");
+
+        emit Claimed(gameId, msg.sender, payout);
+    }
+
+    /// @notice Compute the commitment for a game off-chain-identically.
+    /// @dev Pure and public — the hash is computable by anyone regardless. Exists so the
+    ///      backend can assert its viem `encodePacked` matches this exactly before it
+    ///      ships a game, rather than discovering a mismatch at resolve time.
+    function commitmentFor(uint256 gameId, uint8 imposterId, bytes32 salt)
+        external
+        pure
+        returns (bytes32)
+    {
+        return keccak256(abi.encodePacked(gameId, imposterId, salt));
+    }
+
+    function pools(uint256 gameId) external view returns (uint256[AGENT_COUNT] memory) {
+        return _agentPool[gameId];
+    }
+
+    function stakesOf(uint256 gameId, address user)
+        external
+        view
+        returns (uint256[AGENT_COUNT] memory)
+    {
+        return _stake[gameId][user];
+    }
+}
+```
+
+## 9.3 Remix deployment steps
+
+1. **Compile** — Solidity `0.8.24`, optimizer on (200 runs). Leave EVM version at default; if
+   the deploy reverts on Monad, drop to `shanghai`, then `paris`.
+
+2. **Test in Remix VM first** — Environment: *Remix VM (Cancun)*. Zero gas, instant, multiple
+   funded accounts. This is the only testing this contract needs.
+   - Deploy with `_resolver = 0x0000000000000000000000000000000000000000` (makes you resolver)
+   - Pick a salt — any 32 bytes, e.g.
+     `0x000000000000000000000000000000000000000000000000000000000000002a`
+   - Call `commitmentFor(1, 2, <salt>)` and copy the result. There is no zero-commitment
+     bypass; the hash must be real.
+   - `createGame(1, <now+3600>, <commitment>)`
+   - **The resolver cannot bet.** Switch to a second account → `bet(1, 2)` with Value 1 ether.
+     Switch to a third → `bet(1, 4)` with 2 ether.
+   - `resolve(1, 2, <salt>)` → `claim(1)` from the account that backed agent 2 → expect 3 ether.
+   - **Refund path:** new gameId, both accounts bet agent 0, resolve to agent 5, confirm each
+     `claim` returns exactly its own stake.
+   - **Abandon path:** new gameId with a `closeAt` a minute out, place a bet, then call
+     `abandon(gameId)` — it must revert with `too early`. This is the only branch you cannot
+     fully exercise in the Remix VM without warping time; trust the code path and move on.
+
+3. **Deploy to Monad** — MetaMask on Monad testnet, Environment: *Injected Provider – MetaMask*.
+   Constructor arg = your **backend wallet address** (the one behind `RESOLVER_PK`), not your
+   MetaMask address unless they are the same. Fund from the faucet first.
+
+4. **Copy the ABI** — Compile tab → *Compilation Details* → ABI copy icon → paste into
+   `frontend/src/chain/abi.ts` as `export const marketAbi = [...] as const;`. The `as const` is
+   what gives wagmi its type inference.
+
+5. **Save the address immediately** into `.env.local` and `contract/deployed.json`. Losing it
+   mid-hackathon means redeploying and re-copying everything.
+
+> Verify Monad's chain ID and RPC against docs.monad.xyz rather than trusting a remembered
+> value — a wrong chain ID costs 15 confused minutes.
+
+## 9.4 Commitment encoding — the one real trap
+
+```ts
+import { keccak256, encodePacked, toHex } from "viem";
+
+const salt = toHex(crypto.getRandomValues(new Uint8Array(32)));
+const commitment = keccak256(
+  encodePacked(["uint256", "uint8", "bytes32"], [BigInt(gameId), imposterId, salt])
+);
+// keep `salt` on the server-side Game object until resolve()
+```
+
+`encodePacked`, **not** `encodeAbiParameters` — `abi.encodePacked` in Solidity is the packed
+form. A mismatch fails at `resolve` with "commitment mismatch", which is a miserable thing to
+debug live.
+
+**Don't trust this — assert it.** The contract exposes `commitmentFor(gameId, imposterId, salt)`
+as a free `pure` call that computes the same hash on-chain. Have the backend compare once at
+startup and throw loudly if they disagree:
+
+```ts
+const onchain = await client.readContract({
+  address, abi, functionName: "commitmentFor",
+  args: [BigInt(gameId), imposterId, salt],
+});
+if (onchain !== commitment) throw new Error("commitment encoding mismatch");
+```
+
+The salt must be 32 bytes of CSPRNG output — never a timestamp, never derived from `gameId`.
+There are only six possible imposter values, so a guessable salt turns the commitment into a
+six-try brute force.
+
+**Known limitation:** integer division leaves wei dust in the contract permanently. Irrelevant at
+hackathon scale — the honest answer to a judge is "rounding dust; a sweep function is a v2 line
+item."
+
+---
+
+# 10. Frontend
+
+Three panels, one screen. No routing beyond lobby → game.
+
+```
+┌──────────────────────────────────────────────┐
+│ AGENT IMPOSTER      ROUND 2/3    CLOSES 01:21│
+├───────────────────────┬──────────────────────┤
+│                       │                      │
+│      OFFICE MAP       │    LIVE MARKET       │
+│  6 rooms, CSS grid    │  Who is the Imposter?│
+│  agents transition    │  pool % per agent    │
+│  between them         │  [ BET ON … ]        │
+│                       │                      │
+├───────────────────────┴──────────────────────┤
+│               LIVE EVENT FEED                 │
+│  Hacker: "Where were you?"                    │
+│  Politician: "That is irrelevant."            │
+│  ☠️ Hacker was eliminated                     │
+└──────────────────────────────────────────────┘
+```
+
+**Map:** six CSS-grid cells. Agents are absolutely positioned inside a room div with
+`transition: all 600ms ease`. Changing the room re-parents the token and CSS animates it. That is
+the entire movement system — no canvas, no sprite sheets, no game loop.
+
+**Dead agents** stay on the map, greyed with a ☠️ overlay. Elimination must be visible.
+
+**Market panel** reads `pools(gameId)` from the contract and renders proportions. Bet optimistically
+in local state; the transaction is confirmation, not a gate — a slow testnet must never freeze
+the UI.
+
+**Reveal overlay** is full-screen, breaks the visual language of the rest of the app, and shows:
+the traitor, your prediction, your stake, your payout. Spend the polish time here. This is the
+moment that decides whether anyone says "run another one."
+
+---
+
+# 11. Execution Plan
+
+**Ordering principle: build a fully playable game with a fake brain before writing a single LLM
+call.** Every later layer is then an upgrade, not a dependency. Stop at any stage boundary and
+you still have something to demo.
+
+## 11.0 Where things actually stand
+
+The design work ran ahead of the original hour plan, so the sequence below replaces it.
+
+| | Status |
+|---|---|
+| Smart contract | **Deployed** — Monad testnet `0xFc7AcE…D7d9`, audited build verified on-chain |
+| Design system + tokens | **Done** — `globals.css` |
+| Live Match UI | **Done** |
+| Engine | **Done** — `runGame()` → event log, stub brain, 1.29 kills/game |
+| Agent brains | **Done** — LangChain + OpenAI, stub fallback, leak-checked |
+| Playback / SSE | **Done** — `project()` + SSE, 85 frames, ~81s |
+| Wallet + betting | **Done** — wagmi v3 + viem, bet/claim wired, commitment verified on-chain |
+| Demo hardening | Not started ← **Stage 6, the only thing left** |
+
+**Stack note:** agents run on **LangChain TS + OpenAI**, not the Anthropic SDK
+(`gpt-4o-mini` for action selection, `gpt-4o` for dialogue, both env-overridable).
+The `Brain` interface makes the provider a swap, not a rewrite.
+
+Stage 5 in the old plan (polish) is effectively already banked. That buys roughly an hour,
+and the plan below spends it on the piece the original plan missed — §11.3.
+
+## Stage 1 · Deploy the contract — 20 min
+
+Follow §9.3 exactly. Nothing downstream depends on the contract being *deployed*, but
+everything downstream depends on the ABI being **frozen**, so do this first and never touch it
+again.
+
+- Remix VM test sequence (§9.3 step 2), including the refund path
+- Deploy to Monad testnet
+- Write `contract/deployed.json` and `frontend/src/chain/abi.ts` (`as const`)
+
+**Checkpoint:** a real `claim` paid out in the Remix VM.
+
+## Stage 2 · Engine with a stub brain — 75 min
+
+```
+engine/types.ts      GameEvent union, Agent, Game       ← write first
+engine/config.ts     ROOMS, ADJACENCY, AGENTS, TASKS
+engine/rules.ts      legalActions() + validate()
+engine/brain-stub.ts decide() → random legal action
+engine/simulate.ts   runGame() → GameEvent[]
+```
+
+Use the **design's** names, not the ones in §3.2 — see §11.7.
+
+**Checkpoint:** `bun run src/engine/dev.ts` prints a complete 3-round log containing a sabotage,
+a kill, a meeting, votes and a resolution. Zero AI involved. You now own a working game.
+
+## Stage 3 · Projection + playback — 75 min ★ the risky one
+
+This is the stage the original plan did not account for, and it is now the highest-risk work in
+the project. See §7.2 for why.
+
+```
+engine/project.ts            project(events, upto) → Match
+store/games.ts               Map<string, Game>
+app/api/game/route.ts        POST → simulate, store, return id
+app/api/game/[id]/stream/    GET SSE → replay the log on the §7.1 schedule
+```
+
+Then convert `LiveMatch` from static to live: subscribe to the SSE stream, accumulate events
+into an array, run `project()` over them, render. **The component tree does not change** — only
+where its `Match` comes from.
+
+**Checkpoint:** you click START and watch a stub game play out in the real UI, crew walking
+between rooms, chatter arriving, market moving. This is the demo floor. Protect it above
+everything that follows.
+
+## Stage 4 · Real brains — 60 min
+
+```
+bun add @anthropic-ai/sdk zod
+```
+
+```
+agents/personalities.ts  6 prompt strings, ~40 words each
+agents/memory.ts         buildView(agent, events)   ← the hidden-information rule
+agents/brain.ts          decide() + speak(), structured output, 8s timeout
+```
+
+Swap `brain-stub` for `brain` behind the same signature. On timeout or parse failure, fall
+straight back to the stub — the stub is never deleted.
+
+**Checkpoint:** agents accuse each other citing events that actually happened, and killing the
+network mid-generation still produces a complete game.
+
+## Stage 5 · Wallet, betting, resolution — 60 min
+
+```
+bun add wagmi viem @tanstack/react-query
+```
+
+```
+chain/monad.ts     chain def + wagmi config
+chain/useMarket.ts pools / bet / claim hooks
+```
+
+Wire the existing `BetTicket` to a real transaction — the UI is already built, this is only
+plumbing. The resolver posts `createGame` before playback begins and `resolve` when the log
+ends.
+
+**Checkpoint:** a real MON bet on Monad testnet pays out to a second wallet.
+
+## Stage 6 · Demo hardening — 30 min
+
+- Save one good game to `public/golden-game.json`, served behind `?demo=golden`, bypassing the
+  API and the network entirely
+- Delete the leftover `create-next-app` SVGs in `public/`
+- Run the §12 script twice, out loud, on the machine you will actually present from
+
+## 11.7 Naming: the design won
+
+The comp shipped with different names than §3.2/§8.4, and the comp is what is built. Adopt it —
+retrofitting the UI to the PRD would throw away working code for no gain.
+
+| | Use these | Not these |
+|---|---|---|
+| Agents | ATLAS · BYTE · CIRCE · DELTA · ECHO · FLINT | Sherlock, Chaos, Politician, Hacker, Uncle, Degen |
+| Rooms | Standup Room · Server Closet · Kitchen · Whiteboard · Pods · Demo Stage | MAIN_HALL, DEV_ROOM, … |
+
+The §3.2 adjacency graph still holds — rename its nodes, keep its shape. The personalities in
+§8.4 still hold as *voices*; only the labels change. Agent → contract index is already fixed in
+`lib/match.ts` (ATLAS 0 … FLINT 5) and must not be reordered, since it is what `bet()` takes.
+
+## If you run short
+
+Cut in this order, last first:
+
+1. **Stage 6** — hurts only if something breaks live
+2. **Stage 4** — a stub-brain game still moves, kills and votes; it just argues stupidly
+3. **Stage 5** — you lose the Monad story, which is most of the point
+
+Stages 1–3 are the irreducible product. Stage 3 is what turns a static mockup into a thing that
+plays.
+
+---
+
+# 12. Demo Script (2 minutes)
+
+> "Six AI agents are working on a hackathon project. One of them is secretly trying to destroy
+> it."
+
+Click START. Agents move.
+
+> 🚨 SERVER SABOTAGED
+
+Agents react and converge.
+
+> ☠️ Hacker was eliminated in the Server Room.
+
+Agents argue. Point at the feed.
+
+> "You have seen the evidence. Who is the Imposter?"
+
+Place a MON prediction live. Final meeting runs. Votes land.
+
+> 🎭 POLITICIAN WAS THE IMPOSTER.
+
+Claim. **+0.84 MON.**
+
+> "The agents are autonomous inside the game engine. Monad handles the market and settlement —
+> and the Imposter was committed on-chain before betting opened, so we could not have rigged it."
+
+---
+
+# 13. Risk Register
+
+| Risk | Mitigation |
+|---|---|
+| Generation takes 4 minutes | `effort: "low"` on actions, `Promise.all` per round, 8s hard timeout → stub fallback |
+| Boring game, no kills | Forced drama schedule (§3.3) — the engine overrides a passive Imposter |
+| Monad testnet flaky mid-demo | Bet UI updates optimistically; the tx confirms, it does not gate |
+| `imposterId` leaks to the browser | Single redaction choke point (§6.3); grep for `imposterId` in `src/app` and `src/components` before demoing |
+| Commitment mismatch at resolve | Verify `encodePacked` once in the Remix VM during H0 |
+| Behind schedule at H4 | Ship the stub-brain game with betting. It is still a complete product |
+
+**The biggest trap** is building the live real-time engine because it feels more impressive. It
+is not — nobody in the audience can tell, and it is the single most likely thing to fail on
+stage.
+
+---
+
+# 14. What This Is Not
+
+Not "Among Us with ChatGPT." It is a spectator prediction market where autonomous agents generate
+a live social-deduction drama and a crowd stakes money on reading it correctly.
+
+The AI is not generating text. It is moving, working, lying, sabotaging, killing, accusing, and
+voting. The audience is not chatting with an AI. They are **watching, predicting, and risking
+conviction.**
