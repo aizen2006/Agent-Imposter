@@ -166,11 +166,14 @@ export async function settleMarket(game: {
     });
     return { ok: true, hash };
   } catch (err) {
-    const reason = err instanceof Error ? err.message.split("\n")[0] : String(err);
-    // "already resolved" is expected: every viewer's stream ends and tries.
-    if (!/already resolved/i.test(reason)) {
-      console.warn(`[resolver] resolve failed: ${reason}`);
-    }
+    // Match on the whole message: viem puts the revert reason on a line below
+    // the summary, so testing only the first line never matched and every
+    // viewer's duplicate reveal logged as a failure.
+    const full = err instanceof Error ? err.message : String(err);
+    const expected = /already resolved/i.test(full);
+    const reason = expected ? "already resolved" : full.split("\n")[0];
+    // Expected: every viewer's playback ends and every one of them tries.
+    if (!expected) console.warn(`[resolver] resolve failed: ${reason}`);
     return { ok: false, reason };
   }
 }

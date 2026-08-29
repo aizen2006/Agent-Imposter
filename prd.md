@@ -62,10 +62,33 @@ and it removes the top three ways a live AI demo dies on stage.
 The engine lives in `src/engine/` and is called from route handlers. One process, one deploy, no
 CORS, no ports, no service discovery. Saves ~45 minutes of pure plumbing.
 
-## 2.3 No database
+## 2.3 No database — and, after deploying, no server state either
 
-A module-level `Map<string, Game>` in `src/store/games.ts`. Games are ephemeral. A DB buys you
-nothing in six hours and costs you schema, migrations, and a connection string.
+The original plan was a module-level `Map<string, Game>` in `src/store/games.ts`. Games are
+ephemeral, and a DB buys you nothing in six hours while costing schema, migrations and a
+connection string.
+
+**That was right locally and wrong on Vercel.** Each request there can land on a different
+lambda, so the instance that generated a match was not the instance asked to stream it: every
+playback 404'd and the UI showed "that match is gone" immediately after creating one. The SSE
+stream had a second, independent problem — it runs ~80s, longer than a function is allowed to
+live.
+
+Both problems were the same mistake: keeping state between requests on a platform that does not
+have any. The fix removes the need rather than adding a store.
+
+- `POST /api/game` projects the finished match into its redacted frames and returns **all of
+  them at once** — ~330 KB raw, ~4 KB after edge compression, cheaper than the stream it
+  replaces. The browser replays them on the same timing table.
+- The reveal travels as a **sealed ticket** (`src/chain/ticket.ts`): the game id, imposter and
+  salt encrypted with AES-256-GCM under a key derived from `RESOLVER_PK`. The browser carries
+  it through playback and hands it back to `POST /api/game/resolve`. It is ciphertext the whole
+  way, so §6.3 still holds, and a forged ticket fails authentication — and would still have to
+  satisfy the on-chain commitment.
+- `src/store/games.ts` keeps no map at all now; it only generates.
+
+Simulate-then-stream (§2.1) is untouched. Only the transport moved: from a held-open connection
+to one response the client plays back locally, which is what the golden game already did.
 
 ---
 

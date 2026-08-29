@@ -17,6 +17,7 @@ A spectator-first social deduction game where the players are LLMs and the audie
 - [Project layout](#project-layout)
 - [Development commands](#development-commands)
 - [Environment variables](#environment-variables)
+- [Deploying](#deploying)
 - [Troubleshooting](#troubleshooting)
 
 ---
@@ -223,11 +224,17 @@ agent_imposter/
         ├── chain/
         │   ├── monad.ts        testnet lock, wagmi config, addresses
         │   ├── resolver.ts     server-side signer (createGame / resolve)
+        │   ├── ticket.ts       ★ sealed reveal — how resolution survives serverless
         │   ├── useMarket.ts    client hooks (bet / claim / pools)
         │   └── abi.ts
-        ├── components/live/    the match UI
-        ├── app/api/game/       POST create · GET stream · POST resolve
-        └── store/games.ts      in-memory match store
+        ├── components/live/
+        │   ├── Replay.tsx      the player — one for live and recorded alike
+        │   ├── LiveGame.tsx    live match, fed from the handoff
+        │   ├── GoldenGame.tsx  the recorded fallback
+        │   └── …               the match UI
+        ├── lib/handoff.ts      carries a match from lobby to match page
+        ├── app/api/game/       POST create · POST resolve
+        └── store/games.ts      match generation (no store — see Deploying)
 ```
 
 The two ★ files are where the interesting invariants live. `project.ts` is what keeps the answer out of the browser; `memory.ts` is what keeps it out of the *other agents*, which is what makes the meetings mean anything.
@@ -260,9 +267,10 @@ bun --env-file=.env.local src/engine/golden.ts 10 --llm   # re-bake the recorded
 
 | Route | Does |
 |---|---|
-| `POST /api/game` | Generates a full match, commits the Imposter on-chain, returns its id |
-| `GET /api/game/[id]/stream` | SSE — replays the log on a timer as redacted snapshots |
-| `POST /api/game/[id]/resolve` | Reveals on-chain. Idempotent — every viewer calls it |
+| `POST /api/game` | Generates a full match, commits the Imposter on-chain, returns every redacted frame plus a sealed reveal ticket |
+| `POST /api/game/resolve` | Reveals on-chain from that ticket. Idempotent — every viewer calls it |
+
+Two routes, no state between them. See [Deploying](#deploying).
 
 ---
 
@@ -313,6 +321,39 @@ Four independent guards, because viem ships `monad` (mainnet, chain **143**) in 
 
 ---
 
+## Deploying
+
+It runs on Vercel with no configuration, but two things about the architecture are worth
+knowing because they are what makes that true.
+
+**Nothing is stored between requests.** `POST /api/game` generates the match, projects it into
+redacted frames, and returns all of them in one response. The browser replays them locally. An
+earlier version held games in a module-level `Map` and streamed them over SSE; on Vercel that
+failed immediately, because the lambda that generated a match is not the lambda asked to stream
+it — every playback 404'd right after creation. The SSE stream had a second problem too: ~80s of
+playback outlives what a serverless function is allowed to run.
+
+**The reveal travels as a sealed ticket.** Resolution needs the imposter and the salt, which
+cannot go to the browser in the clear. So the server encrypts them (AES-256-GCM, key derived
+from `RESOLVER_PK`), the browser carries the ciphertext through playback, and hands it back at
+the end. Opaque to the client, and a tampered ticket fails authentication — and would still have
+to satisfy the on-chain commitment.
+
+Set the same environment variables in the Vercel dashboard as in `.env.local`. Notes:
+
+| | |
+|---|---|
+| **Root directory** | `frontend` |
+| **`maxDuration`** | 60s, set in the create route. Generation takes ~23s with real models, ~1s with the stub. 60 is the Hobby ceiling; Pro allows 300 |
+| **Response size** | ~330 KB raw, ~4 KB after Vercel's edge compression. Well under the 4.5 MB function limit |
+| **`RESOLVER_PK`** | Without it there is no market *and* no reveal ticket — the game plays off-chain |
+
+A match lives in the tab that asked for it, so a `/game/[id]` link opened elsewhere shows "that
+match isn't in this tab" rather than a broken player. Sharing a running match is not a feature
+this build has.
+
+---
+
 ## Troubleshooting
 
 **`market: { open: false, reason: "resolver wallet unavailable" }`**
@@ -329,6 +370,15 @@ Wrong network. The top bar shows a **Switch to Monad testnet** button — click 
 
 **Agents sound generic / repetitive**
 No `OPENAI_API_KEY`, so the stub brain is playing. That's expected.
+
+**"That match isn't in this tab"**
+Matches are played back in the tab that generated them (see [Deploying](#deploying)). Start a
+new one. If it happens right after creating a match, check that `sessionStorage` isn't blocked —
+private windows in some browsers disable it.
+
+**Deployed build shows the match ending immediately**
+That was the pre-serverless architecture and is fixed. If you see it again, you're on an old
+deployment — the current build has no `/api/game/[id]/stream` route at all.
 
 **`bet()` reverts with `resolver cannot bet`**
 You're connected as the resolver account. Switch to any other wallet — this restriction is deliberate.
