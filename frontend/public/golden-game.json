@@ -1,0 +1,603 @@
+{
+  "note": "Demo safety net (prd.md Stage 6). Replayed client-side with betting disabled. Regenerate: bun --env-file=.env.local src/engine/golden.ts 12 --llm",
+  "generatedAt": "2026-08-29T09:48:20.834Z",
+  "brain": "openai",
+  "seed": 8000,
+  "imposter": "ECHO",
+  "crewWon": false,
+  "events": [
+    {
+      "t": "GAME_STARTED",
+      "round": 0,
+      "scenario": "Ship it before dawn",
+      "lineup": [
+        {
+          "id": 0,
+          "name": "ATLAS",
+          "room": "PODS"
+        },
+        {
+          "id": 1,
+          "name": "BYTE",
+          "room": "STANDUP"
+        },
+        {
+          "id": 2,
+          "name": "CIRCE",
+          "room": "SERVER_CLOSET"
+        },
+        {
+          "id": 3,
+          "name": "DELTA",
+          "room": "SERVER_CLOSET"
+        },
+        {
+          "id": 4,
+          "name": "ECHO",
+          "room": "STANDUP"
+        },
+        {
+          "id": 5,
+          "name": "FLINT",
+          "room": "SERVER_CLOSET"
+        }
+      ]
+    },
+    {
+      "t": "AGENT_MOVED",
+      "round": 1,
+      "agentId": 5,
+      "from": "SERVER_CLOSET",
+      "to": "PODS"
+    },
+    {
+      "t": "TASK_DONE",
+      "round": 1,
+      "agentId": 0,
+      "room": "PODS",
+      "task": "clear the sleep queue"
+    },
+    {
+      "t": "TASK_DONE",
+      "round": 1,
+      "agentId": 2,
+      "room": "SERVER_CLOSET",
+      "task": "restart the build runner"
+    },
+    {
+      "t": "TASK_DONE",
+      "round": 1,
+      "agentId": 4,
+      "room": "STANDUP",
+      "task": "sync the standup notes"
+    },
+    {
+      "t": "SAID",
+      "round": 1,
+      "agentId": 0,
+      "text": "I’ll clear the sleep queue. Obvious first move.",
+      "room": "PODS",
+      "meeting": false
+    },
+    {
+      "t": "SAID",
+      "round": 1,
+      "agentId": 2,
+      "text": "I’m checking the build runner first.",
+      "room": "SERVER_CLOSET",
+      "meeting": false
+    },
+    {
+      "t": "SAID",
+      "round": 1,
+      "agentId": 4,
+      "text": "Syncing the standup notes.",
+      "room": "STANDUP",
+      "meeting": false
+    },
+    {
+      "t": "SAID",
+      "round": 1,
+      "agentId": 5,
+      "text": "ATLAS is isolated. I’m checking that immediately.",
+      "room": "PODS",
+      "meeting": false
+    },
+    {
+      "t": "SABOTAGE",
+      "round": 1,
+      "room": "STANDUP",
+      "what": "meeting notes deleted",
+      "witnesses": 1
+    },
+    {
+      "t": "MEETING_START",
+      "round": 1
+    },
+    {
+      "t": "AGENT_MOVED",
+      "round": 1,
+      "agentId": 0,
+      "from": "PODS",
+      "to": "STANDUP"
+    },
+    {
+      "t": "AGENT_MOVED",
+      "round": 1,
+      "agentId": 2,
+      "from": "SERVER_CLOSET",
+      "to": "STANDUP"
+    },
+    {
+      "t": "AGENT_MOVED",
+      "round": 1,
+      "agentId": 3,
+      "from": "SERVER_CLOSET",
+      "to": "STANDUP"
+    },
+    {
+      "t": "AGENT_MOVED",
+      "round": 1,
+      "agentId": 5,
+      "from": "PODS",
+      "to": "STANDUP"
+    },
+    {
+      "t": "SAID",
+      "round": 1,
+      "agentId": 0,
+      "text": "FLINT called me isolated, then showed up wherever the meeting was. I witnessed him move from the Pods to the Standup Room, so he is the cleanest line of inquiry.",
+      "room": "STANDUP",
+      "meeting": true,
+      "accuses": 5
+    },
+    {
+      "t": "SAID",
+      "round": 1,
+      "agentId": 1,
+      "text": "I witnessed FLINT enter from the Pods to the Standup Room with the rest. I did not witness the deletion itself, so ATLAS’s claim is only a movement note, not proof.",
+      "room": "STANDUP",
+      "meeting": true,
+      "accuses": 5
+    },
+    {
+      "t": "SAID",
+      "round": 1,
+      "agentId": 2,
+      "text": "I witnessed FLINT move from the Pods to the Standup Room, but I did not witness the notes deletion. Why are we treating movement as proof instead of the one witness to the sabotage?",
+      "room": "STANDUP",
+      "meeting": true
+    },
+    {
+      "t": "SAID",
+      "round": 1,
+      "agentId": 3,
+      "text": "I witnessed FLINT move from the Pods to the Standup Room. That proves movement, not sabotage, and we only had one witness to the deletion.",
+      "room": "STANDUP",
+      "meeting": true
+    },
+    {
+      "t": "SAID",
+      "round": 1,
+      "agentId": 4,
+      "text": "I witnessed FLINT move from the Pods to the Standup Room, and that only proves movement, not the deletion. The one witness to the sabotage is the part that matters.",
+      "room": "STANDUP",
+      "meeting": true,
+      "accuses": 5
+    },
+    {
+      "t": "SAID",
+      "round": 1,
+      "agentId": 5,
+      "text": "All five of you just buried the only real clue under a pile of movement chatter. I witnessed the sabotage was in the Standup Room with one witness, and I’m pressing ATLAS because he’s the one pushing the loudest false…",
+      "room": "STANDUP",
+      "meeting": true,
+      "accuses": 0
+    },
+    {
+      "t": "VOTE",
+      "round": 1,
+      "agentId": 0,
+      "targetId": 5
+    },
+    {
+      "t": "VOTE",
+      "round": 1,
+      "agentId": 1,
+      "targetId": 0
+    },
+    {
+      "t": "VOTE",
+      "round": 1,
+      "agentId": 2,
+      "targetId": null
+    },
+    {
+      "t": "VOTE",
+      "round": 1,
+      "agentId": 3,
+      "targetId": 0
+    },
+    {
+      "t": "VOTE",
+      "round": 1,
+      "agentId": 4,
+      "targetId": 0
+    },
+    {
+      "t": "VOTE",
+      "round": 1,
+      "agentId": 5,
+      "targetId": 0
+    },
+    {
+      "t": "ELIMINATED",
+      "round": 1,
+      "agentId": 0,
+      "role": "CREW"
+    },
+    {
+      "t": "AGENT_MOVED",
+      "round": 2,
+      "agentId": 1,
+      "from": "STANDUP",
+      "to": "PODS"
+    },
+    {
+      "t": "AGENT_MOVED",
+      "round": 2,
+      "agentId": 2,
+      "from": "STANDUP",
+      "to": "KITCHEN"
+    },
+    {
+      "t": "AGENT_MOVED",
+      "round": 2,
+      "agentId": 3,
+      "from": "STANDUP",
+      "to": "SERVER_CLOSET"
+    },
+    {
+      "t": "AGENT_MOVED",
+      "round": 2,
+      "agentId": 4,
+      "from": "STANDUP",
+      "to": "DEMO_STAGE"
+    },
+    {
+      "t": "AGENT_MOVED",
+      "round": 2,
+      "agentId": 5,
+      "from": "STANDUP",
+      "to": "WHITEBOARD"
+    },
+    {
+      "t": "AGENT_MOVED",
+      "round": 2,
+      "agentId": 1,
+      "from": "PODS",
+      "to": "SERVER_CLOSET"
+    },
+    {
+      "t": "AGENT_MOVED",
+      "round": 2,
+      "agentId": 2,
+      "from": "KITCHEN",
+      "to": "WHITEBOARD"
+    },
+    {
+      "t": "AGENT_MOVED",
+      "round": 2,
+      "agentId": 3,
+      "from": "SERVER_CLOSET",
+      "to": "PODS"
+    },
+    {
+      "t": "AGENT_MOVED",
+      "round": 2,
+      "agentId": 5,
+      "from": "WHITEBOARD",
+      "to": "SERVER_CLOSET"
+    },
+    {
+      "t": "TASK_DONE",
+      "round": 2,
+      "agentId": 4,
+      "room": "DEMO_STAGE",
+      "task": "rehearse the pitch"
+    },
+    {
+      "t": "SAID",
+      "round": 2,
+      "agentId": 2,
+      "text": "I’m going where FLINT is; who’s he trying to corner now?",
+      "room": "WHITEBOARD",
+      "meeting": false
+    },
+    {
+      "t": "SAID",
+      "round": 2,
+      "agentId": 3,
+      "text": "I’m checking the Pods. Movement first, noise second.",
+      "room": "PODS",
+      "meeting": false
+    },
+    {
+      "t": "SAID",
+      "round": 2,
+      "agentId": 4,
+      "text": "Rehearsing the pitch.",
+      "room": "DEMO_STAGE",
+      "meeting": false
+    },
+    {
+      "t": "SAID",
+      "round": 2,
+      "agentId": 5,
+      "text": "ATLAS was clean. Someone hid behind that ejection.",
+      "room": "SERVER_CLOSET",
+      "meeting": false
+    },
+    {
+      "t": "AGENT_MOVED",
+      "round": 2,
+      "agentId": 4,
+      "from": "DEMO_STAGE",
+      "to": "WHITEBOARD"
+    },
+    {
+      "t": "KILL",
+      "round": 2,
+      "victimId": 2,
+      "room": "WHITEBOARD"
+    },
+    {
+      "t": "BODY_FOUND",
+      "round": 2,
+      "victimId": 2,
+      "room": "WHITEBOARD",
+      "finderId": 5
+    },
+    {
+      "t": "MEETING_START",
+      "round": 2
+    },
+    {
+      "t": "AGENT_MOVED",
+      "round": 2,
+      "agentId": 1,
+      "from": "SERVER_CLOSET",
+      "to": "STANDUP"
+    },
+    {
+      "t": "AGENT_MOVED",
+      "round": 2,
+      "agentId": 3,
+      "from": "PODS",
+      "to": "STANDUP"
+    },
+    {
+      "t": "AGENT_MOVED",
+      "round": 2,
+      "agentId": 4,
+      "from": "WHITEBOARD",
+      "to": "STANDUP"
+    },
+    {
+      "t": "AGENT_MOVED",
+      "round": 2,
+      "agentId": 5,
+      "from": "SERVER_CLOSET",
+      "to": "STANDUP"
+    },
+    {
+      "t": "SAID",
+      "round": 2,
+      "agentId": 1,
+      "text": "I witnessed FLINT leave the Server Closet and arrive here with us; I did not witness the kill in the Whiteboard. FLINT is the only one I saw moving off the scene before CIRCE was found dead.",
+      "room": "STANDUP",
+      "meeting": true,
+      "accuses": 5
+    },
+    {
+      "t": "SAID",
+      "round": 2,
+      "agentId": 3,
+      "text": "BYTE is doing the same trick again: movement, not kill. I witnessed FLINT move from the Server Closet to the Standup Room; that’s not proof of sabotage, and I’m not voting on noise.",
+      "room": "STANDUP",
+      "meeting": true
+    },
+    {
+      "t": "SAID",
+      "round": 2,
+      "agentId": 4,
+      "text": "I witnessed FLINT move from the Server Closet to the Standup Room, and that is still movement, not the kill. BYTE is right that the actual sabotage witness matters, not the route here.",
+      "room": "STANDUP",
+      "meeting": true,
+      "accuses": 5
+    },
+    {
+      "t": "SAID",
+      "round": 2,
+      "agentId": 5,
+      "text": "BYTE is peddling the same garbage again: movement is not a kill, and I witnessed CIRCE dead in the Whiteboard after we split. I’m watching BYTE for pushing a fake trail while ignoring the actual sabotage witness.",
+      "room": "STANDUP",
+      "meeting": true,
+      "accuses": 1
+    },
+    {
+      "t": "VOTE",
+      "round": 2,
+      "agentId": 1,
+      "targetId": 5
+    },
+    {
+      "t": "VOTE",
+      "round": 2,
+      "agentId": 3,
+      "targetId": 1
+    },
+    {
+      "t": "VOTE",
+      "round": 2,
+      "agentId": 4,
+      "targetId": 1
+    },
+    {
+      "t": "VOTE",
+      "round": 2,
+      "agentId": 5,
+      "targetId": 1
+    },
+    {
+      "t": "ELIMINATED",
+      "round": 2,
+      "agentId": 1,
+      "role": "CREW"
+    },
+    {
+      "t": "AGENT_MOVED",
+      "round": 3,
+      "agentId": 3,
+      "from": "STANDUP",
+      "to": "WHITEBOARD"
+    },
+    {
+      "t": "AGENT_MOVED",
+      "round": 3,
+      "agentId": 4,
+      "from": "STANDUP",
+      "to": "SERVER_CLOSET"
+    },
+    {
+      "t": "AGENT_MOVED",
+      "round": 3,
+      "agentId": 5,
+      "from": "STANDUP",
+      "to": "DEMO_STAGE"
+    },
+    {
+      "t": "AGENT_MOVED",
+      "round": 3,
+      "agentId": 3,
+      "from": "WHITEBOARD",
+      "to": "SERVER_CLOSET"
+    },
+    {
+      "t": "AGENT_MOVED",
+      "round": 3,
+      "agentId": 4,
+      "from": "SERVER_CLOSET",
+      "to": "WHITEBOARD"
+    },
+    {
+      "t": "AGENT_MOVED",
+      "round": 3,
+      "agentId": 5,
+      "from": "DEMO_STAGE",
+      "to": "WHITEBOARD"
+    },
+    {
+      "t": "SAID",
+      "round": 3,
+      "agentId": 4,
+      "text": "Checking the Whiteboard.",
+      "room": "WHITEBOARD",
+      "meeting": false
+    },
+    {
+      "t": "SAID",
+      "round": 3,
+      "agentId": 5,
+      "text": "CIRCE died in the Whiteboard. I’m checking who’s lingering there.",
+      "room": "WHITEBOARD",
+      "meeting": false
+    },
+    {
+      "t": "KILL",
+      "round": 3,
+      "victimId": 5,
+      "room": "WHITEBOARD"
+    },
+    {
+      "t": "BODY_FOUND",
+      "round": 3,
+      "victimId": 5,
+      "room": "WHITEBOARD",
+      "finderId": 3
+    },
+    {
+      "t": "MEETING_START",
+      "round": 3
+    },
+    {
+      "t": "AGENT_MOVED",
+      "round": 3,
+      "agentId": 3,
+      "from": "SERVER_CLOSET",
+      "to": "STANDUP"
+    },
+    {
+      "t": "AGENT_MOVED",
+      "round": 3,
+      "agentId": 4,
+      "from": "WHITEBOARD",
+      "to": "STANDUP"
+    },
+    {
+      "t": "SAID",
+      "round": 3,
+      "agentId": 3,
+      "text": "I witnessed ECHO leave the Whiteboard, then FLINT was found dead there. ATLAS was crew, BYTE was crew, and the only person I’ve seen tied to that scene is ECHO.",
+      "room": "STANDUP",
+      "meeting": true,
+      "accuses": 4
+    },
+    {
+      "t": "SAID",
+      "round": 3,
+      "agentId": 4,
+      "text": "I witnessed DELTA move from the Whiteboard to the Server Closet, then I left the Standup Room after that. Movement is still movement, and I’m not taking a single sighting as proof of a kill.",
+      "room": "STANDUP",
+      "meeting": true,
+      "accuses": 3
+    },
+    {
+      "t": "VOTE",
+      "round": 3,
+      "agentId": 3,
+      "targetId": 4
+    },
+    {
+      "t": "VOTE",
+      "round": 3,
+      "agentId": 4,
+      "targetId": 3
+    },
+    {
+      "t": "NO_ELIMINATION",
+      "round": 3,
+      "reason": "tie"
+    },
+    {
+      "t": "RESOLVED",
+      "round": 3,
+      "imposterId": 4,
+      "crewWon": false
+    }
+  ],
+  "meta": {
+    "events": 78,
+    "durationMs": 76800,
+    "score": 144,
+    "why": [
+      "2 kills",
+      "body discovered",
+      "2 wrongful ejections",
+      "3 rounds",
+      "22 lines of argument",
+      "imposter wins",
+      "77s"
+    ]
+  }
+}

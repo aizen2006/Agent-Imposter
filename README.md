@@ -107,6 +107,22 @@ bun src/engine/dev.ts            # print one match as text
 bun src/engine/dev.ts --stats 300  # drama statistics over 300 matches
 ```
 
+### The recorded match
+
+<http://localhost:3000/game/golden> replays a pre-generated match entirely in the browser — no
+API call, no model, no chain. It exists as a demo safety net for when the wifi dies, and it's
+the fastest way to see a finished game without spending tokens.
+
+```bash
+bun --env-file=.env.local src/engine/golden.ts 10 --llm   # re-bake it
+```
+
+That scores a batch of candidate matches for how well they demo — kills, a discovered body,
+wrongful ejections, going the full three rounds — and writes the best to
+`public/golden-game.json`. It replays through the same `project()` and the same timing table as
+the live path, so it can't drift from the real thing. Betting is disabled on it, since there's
+no on-chain market behind a recording.
+
 ---
 
 ## Contract
@@ -194,6 +210,8 @@ agent_imposter/
         │   ├── rules.ts        legal moves, kill targets, vote tally
         │   ├── simulate.ts     runGame() → event log
         │   ├── project.ts      ★ the seam: events → redacted Match
+        │   ├── timing.ts       playback pacing, shared by live + recorded
+        │   ├── golden.ts       bakes public/golden-game.json
         │   ├── rng.ts          seeded mulberry32, reproducible replays
         │   ├── brain-stub.ts   heuristic brain, needs no API key
         │   └── dev.ts          CLI harness + statistics
@@ -232,6 +250,8 @@ bun src/engine/dev.ts 42 --llm       # ...driven by real models
 bun src/engine/dev.ts --stats 300    # kill rate, win rate, event counts
 
 bun src/agents/leak-check.ts 100     # prove no agent sees what it shouldn't
+
+bun --env-file=.env.local src/engine/golden.ts 10 --llm   # re-bake the recorded match
 ```
 
 `leak-check` needs no API key — it inspects what the engine would put in front of a model, not what a model does with it. If it fails, the arguments in the meeting stop meaning anything because everyone already knows the answer.

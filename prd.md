@@ -808,7 +808,9 @@ The design work ran ahead of the original hour plan, so the sequence below repla
 | Agent brains | **Done** — LangChain + OpenAI, stub fallback, leak-checked |
 | Playback / SSE | **Done** — `project()` + SSE, 85 frames, ~81s |
 | Wallet + betting | **Done** — wagmi v3 + viem, bet/claim wired, commitment verified on-chain |
-| Demo hardening | Not started ← **Stage 6, the only thing left** |
+| Demo hardening | **Done** — golden game at `/game/golden`, §12 script rewritten, assets cleaned |
+
+**All six stages are complete.** What is left is rehearsal, which is §12.0.
 
 **Stack note:** agents run on **LangChain TS + OpenAI**, not the Anthropic SDK
 (`gpt-4o-mini` for action selection, `gpt-4o` for dialogue, both env-overridable).
@@ -899,12 +901,31 @@ ends.
 
 **Checkpoint:** a real MON bet on Monad testnet pays out to a second wallet.
 
-## Stage 6 · Demo hardening — 30 min
+## Stage 6 · Demo hardening — 30 min · **DONE**
 
-- Save one good game to `public/golden-game.json`, served behind `?demo=golden`, bypassing the
-  API and the network entirely
-- Delete the leftover `create-next-app` SVGs in `public/`
-- Run the §12 script twice, out loud, on the machine you will actually present from
+- [x] **Golden game.** `bun --env-file=.env.local src/engine/golden.ts 10 --llm` scores a batch
+      of candidates for how well they demo — kills, a discovered body, wrongful ejections,
+      going the full three rounds, dialogue in the 8–24 line sweet spot — and writes the best
+      to `public/golden-game.json`. Served at `/game/golden` and `?demo=golden`, replayed
+      entirely client-side: no API, no SSE, no model, no chain.
+- [x] **Same code path as the live game.** The timing table moved to `engine/timing.ts` so the
+      fallback and the real thing share it. Both project through `engine/project.ts`. The
+      safety net cannot drift from the product it stands in for.
+- [x] **Betting disabled on the recording.** No `marketId` is passed, so `BetTicket` shows
+      "Market not open". A ticket that cannot settle should not be clickable.
+- [x] Deleted the five leftover `create-next-app` SVGs in `public/`.
+- [x] Lobby carries a discreet "or watch a recorded match" link — one click beats typing a URL
+      correctly while a room watches.
+- [x] §12 rewritten against the shipped build, with a fallback ladder and the questions.
+- [ ] **Run the §12 script twice, out loud, on the machine you will present from.** Not
+      something anyone can do for you.
+
+**Bug found and fixed while baking the golden game.** Every line of dialogue was being clipped
+mid-word — `"CIRCE is a,"`, `"I did not_"`. Cause: `z.string().max(180)` becomes `maxLength` in
+the JSON schema, and OpenAI's constrained decoder treats that as a hard stop at exactly
+character 180 rather than a hint. The caps are gone from the schemas; brevity is asked for in
+the field descriptions and enforced afterwards by `clip()`, which cuts on a sentence boundary.
+This affected every LLM game, not just the golden one.
 
 ## 11.7 Naming: the design won
 
@@ -935,29 +956,106 @@ plays.
 
 # 12. Demo Script (2 minutes)
 
-> "Six AI agents are working on a hackathon project. One of them is secretly trying to destroy
-> it."
+Rewritten against the shipped build. The §11.7 names are the real ones; the old script used
+Hacker/Politician/Server Room, which no longer exist.
 
-Click START. Agents move.
+## 12.0 Before you stand up
 
-> 🚨 SERVER SABOTAGED
+Run this checklist on the machine you will actually present from, on the venue wifi.
 
-Agents react and converge.
+- [ ] `bun run dev` is already running. Never start it in front of people.
+- [ ] `http://localhost:3000` open in one tab, `http://localhost:3000/game/golden` in a second.
+- [ ] **MetaMask is on a wallet that is NOT the resolver.** `bet()` reverts with
+      `resolver cannot bet` for `0x462dD9…`. This is the single most likely live failure and it
+      is a deliberate contract rule, not a bug. Use a second funded account.
+- [ ] That wallet is on Monad testnet and holds MON.
+- [ ] `public/golden-game.json` exists and is freshly baked with `--llm`.
+- [ ] Zoom to ~110%. The chatter panel is what people read; it must be legible from the back.
+- [ ] Notifications off.
 
-> ☠️ Hacker was eliminated in the Server Room.
+## 12.1 The beat sheet
 
-Agents argue. Point at the feed.
+Total speaking time ~2 min against ~80s of playback, so you are talking over the middle third.
 
-> "You have seen the evidence. Who is the Imposter?"
+**0:00 — Lobby.** Six crewmates idling.
 
-Place a MON prediction live. Final meeting runs. Votes land.
+> "Six AI agents are working on a hackathon project overnight. One of them has been told to
+> sabotage it. The other five don't know which."
 
-> 🎭 POLITICIAN WAS THE IMPOSTER.
+**0:12 — Click "Start new match".** It says *Generating…* for a few seconds. Do not fill the
+silence apologetically — explain it, because this pause is the architecture:
 
-Claim. **+0.84 MON.**
+> "It's playing the entire match right now — every move, every argument, every vote — before
+> showing me a single frame. That's deliberate. Nothing you're about to watch can buffer or
+> stall waiting on a model."
 
-> "The agents are autonomous inside the game engine. Monad handles the market and settlement —
-> and the Imposter was committed on-chain before betting opened, so we could not have rigged it."
+**0:22 — Playback starts.** Agents move between rooms. Point at the map.
+
+> "They're picking these moves themselves. Each one only knows what it personally witnessed —
+> who was in the room, who walked in from where. Nobody has a god view. Neither do you."
+
+**0:35 — The market.** Point at the six rows and the odds.
+
+> "The Imposter was committed on-chain before this started — a hash of the answer plus a salt,
+> posted in the transaction that opened the market. So the answer was fixed before a single
+> bet could be placed. We can't move it now, and you don't have to trust me about that."
+
+**0:45 — Place a real bet.** Pick whoever the odds like. Confirm in MetaMask.
+
+> "Ten MON on ECHO. That's a real transaction on Monad testnet."
+
+**0:55 — A body is found. The meeting fires.** Stop talking. Let two or three lines land — this
+is the product and it needs silence.
+
+> *(read one line out loud, then:)* "That's not a script. It's responding to what the agent
+> before it actually said."
+
+**1:20 — The vote.** Someone gets ejected.
+
+> "And they're wrong. They just ejected a crew member."
+
+**1:35 — Reveal.** The Imposter is shown, `resolve()` fires, the commitment is verified on-chain.
+
+> "The reveal transaction has to produce a preimage matching that original hash, or the contract
+> rejects it. Provably the same answer as before betting opened."
+
+**1:45 — Claim.** Winners split the whole pool, parimutuel.
+
+> "No house, no counterparty, no fee. Everyone who read it right splits everything that was
+> staked."
+
+**1:55 — Land it.**
+
+> "The agents are autonomous inside the game engine. Monad handles the market and the
+> settlement. The audience isn't chatting with an AI — they're reading one, and betting that
+> they read it better than the other five did."
+
+## 12.2 When it breaks
+
+The fallback ladder, cheapest first. Practise the top two — they are the ones you will use.
+
+| What broke | Do this | Costs you |
+|---|---|---|
+| Generation is slow or OpenAI 500s | Keep talking through it; the stub brain takes over automatically | Weaker dialogue, nothing visible |
+| Wifi dies · OpenAI is down · anything at all | Second tab: **`/game/golden`** — a recorded match replayed from disk. No API, no SSE, no chain | Betting is disabled; say "this one's a recording" and narrate the same beats |
+| MetaMask won't connect or bet reverts | Skip the bet, keep the playback running, show the market opening tx on the explorer instead | The money beat becomes a story instead of a demo |
+| Everything is on fire | `/game/golden` and talk over it | Nothing — this is why it exists |
+
+The golden game replays through the same `project()` and the same timing table as the live path,
+so the beats land where you rehearsed them.
+
+## 12.3 Questions you will get
+
+- **"Are the agents actually deciding, or is it scripted?"** Deciding. `engine/` never calls a
+  model and the model never mutates state — it picks from a list of legal moves the engine
+  hands it. Show `src/agents/brain.ts` and the `legalActions()` call.
+- **"How do I know you can't rig the outcome?"** Commit–reveal. Show `commitmentFor()` on the
+  contract and the `createGame` transaction on the explorer, timestamped before the bets.
+- **"What stops the resolver betting on itself?"** `bet()` rejects `msg.sender == resolver`.
+- **"What if you just never reveal?"** `abandon()` is permissionless after 24 hours and refunds
+  everyone their own stake.
+- **"Why not run the agents live?"** Because then every model timeout happens in front of you.
+  Generation is 3–20s; playback must never stall.
 
 ---
 

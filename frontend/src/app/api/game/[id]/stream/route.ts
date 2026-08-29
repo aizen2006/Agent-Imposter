@@ -1,6 +1,6 @@
 import { project } from "@/engine/project";
+import { planPlayback } from "@/engine/timing";
 import { getGame } from "@/store/games";
-import type { GameEvent } from "@/engine/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,22 +13,10 @@ export const dynamic = "force-dynamic";
    finished before the first byte.
 
    Snapshots are sent rather than raw events — `Match` has no field that can
-   carry imposterId, which is what makes the redaction structural. */
+   carry imposterId, which is what makes the redaction structural.
 
-const DELAY: Record<GameEvent["t"], number> = {
-  GAME_STARTED: 400,
-  AGENT_MOVED: 600,
-  TASK_DONE: 900,
-  SABOTAGE: 1600,
-  KILL: 1800, // let it land
-  BODY_FOUND: 1800,
-  MEETING_START: 1200,
-  SAID: 1400,
-  VOTE: 400,
-  ELIMINATED: 2500, // the reveal beat
-  NO_ELIMINATION: 1600,
-  RESOLVED: 2000,
-};
+   The timing table lives in engine/timing.ts because the golden-game fallback
+   replays through the same one. */
 
 export async function GET(
   req: Request,
@@ -39,16 +27,10 @@ export async function GET(
   if (!game) return new Response("no such game", { status: 404 });
 
   const url = new URL(req.url);
-  const speed = Math.min(8, Math.max(0.25, Number(url.searchParams.get("speed") ?? 1)));
-
-  // Total runtime is known up front, so the market countdown is exact rather
-  // than a guess — it closes when the final meeting begins (prd.md §3).
-  const durations = game.events.map((e) => DELAY[e.t] / speed);
-  const totalMs = durations.reduce((a, b) => a + b, 0);
-  const finalMeeting = game.events.findLastIndex((e) => e.t === "MEETING_START");
-  const closesAtMs = durations
-    .slice(0, finalMeeting === -1 ? durations.length : finalMeeting)
-    .reduce((a, b) => a + b, 0);
+  const { durations, totalMs, closesAtMs } = planPlayback(
+    game.events,
+    Number(url.searchParams.get("speed") ?? 1),
+  );
 
   const encoder = new TextEncoder();
   let cancelled = false;

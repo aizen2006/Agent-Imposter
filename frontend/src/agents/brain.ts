@@ -28,17 +28,32 @@ const ACTION_MODEL = process.env.OPENAI_ACTION_MODEL ?? "gpt-4o-mini";
 const DIALOGUE_MODEL = process.env.OPENAI_DIALOGUE_MODEL ?? "gpt-4o";
 const TIMEOUT_MS = Number(process.env.LLM_TIMEOUT_MS ?? 8000);
 
+/* No .max() on any string here, deliberately.
+
+   Zod's .max(n) becomes maxLength in the JSON schema, and OpenAI's constrained
+   decoder treats that as a hard stop: it clips the string at exactly character
+   n, mid-word. What was meant as "keep it short" produced "CIRCE is a," and
+   "I did not_" on screen. Brevity is asked for in the description and enforced
+   afterwards by clip(), which cuts on a sentence boundary instead. */
+
 const DecisionSchema = z.object({
   action: z.enum(["MOVE", "TASK", "WAIT", "FAKE_TASK", "SABOTAGE", "KILL"]),
   target: z
     .string()
     .nullable()
     .describe("Room id for MOVE, agent name for KILL, otherwise null"),
-  say: z.string().max(140).describe("One short line said out loud. May be a lie."),
+  say: z
+    .string()
+    .describe("One short line said out loud, under 15 words. May be a lie."),
 });
 
 const StatementSchema = z.object({
-  text: z.string().max(180).describe("One or two sentences, in character"),
+  text: z
+    .string()
+    .describe(
+      "What you say out loud. One or two complete sentences, under 35 words. " +
+        "Finish your thought — do not trail off.",
+    ),
   accuses: z
     .string()
     .nullable()
@@ -47,8 +62,23 @@ const StatementSchema = z.object({
 
 const VoteSchema = z.object({
   target: z.string().nullable().describe("Agent name to eject, or null to abstain"),
-  reason: z.string().max(120),
+  reason: z.string().describe("One short sentence, under 20 words"),
 });
+
+/** Length backstop that never cuts mid-word. Prefers the last sentence end
+    inside the budget; falls back to the last word break. A line that runs long
+    is a layout problem, but a line that stops mid-word looks like a crash. */
+export function clip(text: string, budget: number): string {
+  const s = text.trim().replace(/\s+/g, " ");
+  if (s.length <= budget) return s;
+
+  const head = s.slice(0, budget);
+  const sentence = Math.max(head.lastIndexOf(". "), head.lastIndexOf("? "), head.lastIndexOf("! "));
+  if (sentence > budget * 0.5) return head.slice(0, sentence + 1);
+
+  const word = head.lastIndexOf(" ");
+  return `${head.slice(0, word > 0 ? word : budget).replace(/[,;:—-]$/, "")}…`;
+}
 
 function models() {
   const common = { timeout: TIMEOUT_MS, maxRetries: 1 };
@@ -131,7 +161,7 @@ export function createLangChainBrain(rng: Rng): Brain {
         return {
           action: out.action as ActionType,
           target: out.target,
-          say: out.say,
+          say: clip(out.say, 140),
         };
       } catch (err) {
         fallback(ctx.self.name, "decide", err);
@@ -169,7 +199,7 @@ export function createLangChainBrain(rng: Rng): Brain {
           out.accuses && ctx.candidates.includes(out.accuses.toUpperCase())
             ? out.accuses.toUpperCase()
             : null;
-        return { text: out.text, accuses };
+        return { text: clip(out.text, 220), accuses };
       } catch (err) {
         fallback(ctx.self.name, "speak", err);
         return stub.speak(ctx);

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Crewmate } from "@/components/Crewmate";
 import { StartMatch } from "@/components/StartMatch";
 import { AGENTS } from "@/lib/match";
@@ -51,6 +52,24 @@ export default function Lobby() {
         </div>
 
         <StartMatch />
+
+        {/* The safety net, one click away rather than a URL you have to
+            remember correctly while a room watches you type (Stage 6). */}
+        <div style={{ marginTop: 18 }}>
+          <Link
+            href="/game/golden"
+            className="mono"
+            style={{
+              fontSize: 12,
+              color: "var(--color-neutral-600)",
+              textDecoration: "none",
+              borderBottom: "1px solid var(--color-divider)",
+              paddingBottom: 2,
+            }}
+          >
+            or watch a recorded match ↗
+          </Link>
+        </div>
       </div>
     </div>
   );
