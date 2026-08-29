@@ -42,6 +42,8 @@ export type MatchMeta = {
 export type StoredMatch = MatchMeta & {
   frames: Match[];
   durations: number[];
+  /** Which gaps are held betting windows (engine/timing.ts). */
+  pauseBefore?: number[];
   ticket: string | null;
 };
 

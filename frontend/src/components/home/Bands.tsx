@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Crewmate } from "@/components/Crewmate";
 import { AGENTS, type AgentId } from "@/lib/match";
 import { MARKET_ADDRESS, explorerTx } from "@/chain/monad";
-import { ago, mon, useStats, type GameStat } from "@/lib/useStats";
+import { ago, mon, useNow, useStats, type GameStat } from "@/lib/useStats";
 
 /* Home page bands (prd.md §15.3).
 
@@ -235,7 +235,13 @@ export function Crew() {
 
 export function LiveNow() {
   const { stats, loading } = useStats();
-  const open = stats.games.filter((g) => !g.resolved).slice(0, 3);
+  /* Matches still taking bets come first — those are the ones a visitor can
+     actually do something about. */
+  const now = useNow(2000);
+  const open = stats.games
+    .filter((g) => !g.resolved)
+    .sort((a, b) => Number(b.startedAt > now) - Number(a.startedAt > now))
+    .slice(0, 3);
 
   return (
     <Band>
@@ -268,7 +274,9 @@ export function LiveNow() {
               style={{ display: "block", textDecoration: "none", color: "inherit" }}
             >
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span className="badge badge-accent">LIVE</span>
+                <span className="badge badge-accent">
+                  {g.startedAt > now ? "BETTING OPEN" : "LIVE"}
+                </span>
                 <span className="mono" style={{ fontSize: 12, color: "var(--color-neutral-600)" }}>
                   {ago(g.startedAt)}
                 </span>

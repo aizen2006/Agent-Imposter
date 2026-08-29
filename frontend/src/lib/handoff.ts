@@ -13,8 +13,11 @@ import type { Match } from "./match";
 export type Handoff = {
   id: string;
   marketId: string;
+  /** When playback begins. Before it, the match is in its betting window. */
+  startedAt: number;
   frames: Match[];
   durations: number[];
+  pauseBefore?: number[];
   ticket: string | null;
   brain: string;
   market: { open: boolean; hash?: string; reason?: string };

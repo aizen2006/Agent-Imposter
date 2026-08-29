@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect } from "react";
 import { Chrome, PageHead } from "@/components/Chrome";
 import { useMarketWrite, useWallet } from "@/chain/useMarket";
 import { AGENTS } from "@/lib/match";
@@ -19,9 +20,15 @@ const nameOf = (i: number | null) =>
 
 export default function MyBets() {
   const wallet = useWallet();
-  const { stats, loading } = useStats();
+  const { stats, loading, refresh } = useStats();
   const write = useMarketWrite();
   const me = wallet.address?.toLowerCase();
+
+  /* A confirmed claim changes what the contract owes, so pull again rather
+     than leaving a stale Claim button up until the next poll. */
+  useEffect(() => {
+    if (write.isConfirmed) refresh();
+  }, [write.isConfirmed, refresh]);
 
   const mine = me
     ? stats.games
@@ -29,7 +36,7 @@ export default function MyBets() {
         .filter((x): x is { game: GameStat; bet: NonNullable<typeof x.bet> } => Boolean(x.bet))
     : [];
 
-  const owed = mine.filter((x) => x.game.resolved && x.bet.payout > 0);
+  const owed = mine.filter((x) => x.game.resolved && x.bet.payout > 0 && !x.bet.claimed);
   const total = owed.reduce((a, x) => a + x.bet.payout, 0);
 
   return (
@@ -90,10 +97,22 @@ export default function MyBets() {
 
             <div style={{ display: "grid", gap: 2, background: "var(--color-divider)" }}>
               {mine.map(({ game, bet }) => {
-                const picked = game.pools
-                  .map((v, i) => ({ v, i }))
-                  .filter((x) => x.v > 0);
-                const claimable = game.resolved && bet.payout > 0;
+                const backed = game.pools.filter((v) => v > 0).length;
+                const claimable = game.resolved && bet.payout > 0 && !bet.claimed;
+
+                /* Three outcomes, not two. When nobody backed the Imposter the
+                   contract refunds every stake (prd.md §3), so a position can
+                   pay out without having been right — showing that as "lost"
+                   beside a live Claim button was simply wrong. */
+                const outcome = !game.resolved
+                  ? "—"
+                  : bet.claimed
+                    ? `${mon(bet.won)} claimed`
+                    : bet.onWinner > 0
+                      ? `${mon(bet.won)} won`
+                      : bet.won > 0
+                        ? `${mon(bet.won)} refunded`
+                        : "lost";
 
                 return (
                   <div
@@ -121,7 +140,8 @@ export default function MyBets() {
                         {game.resolved
                           ? `${nameOf(game.imposterId)} was the Imposter`
                           : "still running"}{" "}
-                        · {ago(game.startedAt)} · {picked.length} agents backed
+                        · {ago(game.startedAt)} · {backed}{" "}
+                        {backed === 1 ? "agent" : "agents"} backed
                       </div>
                     </div>
 
@@ -133,17 +153,16 @@ export default function MyBets() {
                       className="mono"
                       style={{
                         fontSize: 13,
-                        color: bet.onWinner > 0 ? "var(--color-text)" : "var(--color-neutral-500)",
+                        color:
+                          bet.won > 0 ? "var(--color-text)" : "var(--color-neutral-500)",
                       }}
                     >
-                      {game.resolved
-                        ? bet.onWinner > 0
-                          ? `${mon(bet.payout)} won`
-                          : "lost"
-                        : "—"}
+                      {outcome}
                     </span>
 
-                    {claimable ? (
+                    {bet.claimed ? (
+                      <span className="badge badge-soft">CLAIMED</span>
+                    ) : claimable ? (
                       <button
                         type="button"
                         className="btn btn-primary"

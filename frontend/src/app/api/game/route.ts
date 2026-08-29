@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { openMarket } from "@/chain/resolver";
 import { seal } from "@/chain/ticket";
 import { project } from "@/engine/project";
-import { planPlayback } from "@/engine/timing";
+import { LOBBY_MS, planPlayback } from "@/engine/timing";
 import { createGame } from "@/store/games";
 import { putMatch, sweep } from "@/store/matches";
 
@@ -11,15 +11,21 @@ export const runtime = "nodejs";
     60 is Vercel's Hobby ceiling; asking for more there is silently clamped. */
 export const maxDuration = 60;
 
-/* Creates a match and hands back the whole thing, already projected.
+/* Creates a match, schedules it, and hands back the whole thing projected.
 
-   The frames are redacted snapshots — the same `Match` objects the UI used to
-   receive one at a time over SSE. Sending them all at once removes the only
-   two things that could not work on serverless: server-held state between
-   requests, and a connection held open longer than a function may live.
+   Two things make this multiplayer rather than solitaire:
 
-   ~7 KB gzipped for a full match, so this is cheaper than the stream it
-   replaces. Playback is still simulate-then-replay; only the transport moved. */
+   - The match is *announced* now and *starts* after a countdown, so anyone who
+     sees it in the lobby has a real window in which to stake. Before this it
+     began the instant it was created, and the reveal ~80s later hard-closed
+     betting — so a second bettor had to arrive within eighty seconds of a
+     button press nobody had warned them about.
+   - Playback position is a pure function of wall clock against startedAt, so
+     every viewer is on the same frame without anything being pushed to them.
+
+   The frames are redacted snapshots. Sending them all at once removes the two
+   things that cannot work on serverless: state held between requests, and a
+   connection held open longer than a function may live. */
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
@@ -28,15 +34,23 @@ export async function POST(req: Request) {
   const started = Date.now();
   const game = await createGame({ llm });
 
-  // Commit the Imposter on-chain before anyone can stake. Best-effort: a
-  // missing key or a flaky RPC degrades to an off-chain game rather than
-  // failing the request (prd.md §27).
-  const market = await openMarket(game).catch((err: unknown) => ({
+  const { durations, pauseBefore, totalMs, closesAtMs } = planPlayback(game.events);
+
+  /** Doors open now; the match begins after the countdown. */
+  const startedAt = Date.now() + LOBBY_MS;
+
+  /* Commit the Imposter on-chain before a single MON is staked. Betting closes
+     when the final meeting begins — through the countdown and into the early
+     part of playback, so odds still move as evidence lands.
+
+     Best-effort: a missing key or a flaky RPC degrades to an off-chain game
+     rather than failing the request (prd.md §27). */
+  const market = await openMarket(game, startedAt + closesAtMs).catch((err: unknown) => ({
     ok: false as const,
     reason: err instanceof Error ? err.message.split("\n")[0] : "chain unavailable",
+    hash: undefined,
+    block: undefined as number | undefined,
   }));
-
-  const { durations, totalMs, closesAtMs } = planPlayback(game.events);
 
   /* revealAt is sealed with the answer, so a ticket stored publicly beside the
      frames still cannot be used to end a match early (prd.md §15.1). */
@@ -44,8 +58,9 @@ export async function POST(req: Request) {
     game.numericId,
     game.imposterId,
     game.salt,
-    Date.now() + Math.round(totalMs) - 2000,
+    startedAt + Math.round(totalMs) - 2000,
   );
+
   const matchId = Number(game.numericId % BigInt(10000));
 
   let elapsed = 0;
@@ -54,14 +69,12 @@ export async function POST(req: Request) {
     return project(game.events, i + 1, {
       matchId,
       closesIn: Math.max(0, Math.round((closesAtMs - elapsed) / 1000)),
-      spectators: 1 + (game.seed % 1500),
     });
   });
 
   /* Publish so anyone can watch, not only whoever pressed the button
-     (prd.md §15.2). Best-effort: with no blob token this returns null and the
-     match simply stays local, which is the behaviour it replaces. */
-  const startedAt = Date.now();
+     (prd.md §15.2). Best-effort: with no storage this returns null and the
+     match stays local, which is the behaviour it replaces. */
   const shared = await putMatch({
     id: game.id,
     numericId: game.numericId.toString(),
@@ -70,6 +83,7 @@ export async function POST(req: Request) {
     durationMs: Math.round(totalMs),
     frames,
     durations,
+    pauseBefore,
     ticket,
   });
   if (shared) void sweep().catch(() => {});
@@ -90,6 +104,7 @@ export async function POST(req: Request) {
     // is what makes this safe to hand to a browser at all (prd.md §6.3).
     frames,
     durations,
+    pauseBefore,
     totalMs: Math.round(totalMs),
 
     // The answer, encrypted with a key only the server holds. The browser

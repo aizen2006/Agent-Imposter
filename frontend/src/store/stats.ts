@@ -44,8 +44,13 @@ export type Bettor = {
   staked: number;
   /** Stake that was on the agent who turned out to be the Imposter. */
   onWinner: number;
-  /** What they are owed or were paid. Zero until the game resolves. */
+  /** Still claimable right now. Goes to zero the moment they claim, so it
+      answers "show the button?" and nothing else. */
   payout: number;
+  /** What this position was worth, whether or not it has been collected.
+      P&L must use this: paying yourself out is not a loss. */
+  won: number;
+  claimed: boolean;
 };
 
 export type GameStat = {
@@ -61,14 +66,19 @@ export type GameStat = {
   bettors: Bettor[];
 };
 
-/** Resolved games never change, so their stats are computed once per process.
-    A warm lambda serving a lobby refresh does no chain work at all. */
-const settled = new Map<string, GameStat>();
+/* Only the log scan is cached, and only once betting has closed.
+
+   An earlier version cached the whole GameStat for any resolved game, on the
+   reasoning that resolved games never change. They do: `claimed[gameId][user]`
+   flips when someone collects, and `payoutOf` reads it. So a claimed payout
+   went on being reported as claimable and the Claim button never went away.
+
+   Which addresses bet *is* immutable once the market closes, and it is the
+   expensive part — ten getLogs calls. Amounts are re-read every time, in one
+   multicall, which costs nothing. */
+const bettorCache = new Map<string, `0x${string}`[]>();
 
 export async function gameStat(meta: MatchMeta): Promise<GameStat | null> {
-  const cached = settled.get(meta.numericId);
-  if (cached) return cached;
-
   try {
     const gameId = BigInt(meta.numericId);
     const [game, pools] = await client.multicall({
@@ -97,10 +107,15 @@ export async function gameStat(meta: MatchMeta): Promise<GameStat | null> {
     };
 
     if (stat.totalPool > 0 && meta.createdBlock > 0) {
-      stat.bettors = await bettorsFor(gameId, meta.createdBlock, stat.imposterId);
+      stat.bettors = await bettorsFor(
+        gameId,
+        meta.numericId,
+        meta.createdBlock,
+        stat,
+        resolved,
+      );
     }
 
-    if (resolved) settled.set(meta.numericId, stat);
     return stat;
   } catch {
     return null; // one bad game must not empty the whole leaderboard
@@ -111,52 +126,79 @@ export async function gameStat(meta: MatchMeta): Promise<GameStat | null> {
     authoritative even if a log page were missed. */
 async function bettorsFor(
   gameId: bigint,
+  key: string,
   fromBlock: number,
-  imposterId: number | null,
+  game: GameStat,
+  closed: boolean,
 ): Promise<Bettor[]> {
-  const addresses = new Set<`0x${string}`>();
-  let from = BigInt(fromBlock);
+  let list = bettorCache.get(key);
 
-  for (let i = 0; i < MAX_CHUNKS; i++) {
-    try {
-      const logs = await client.getLogs({
-        ...contract,
-        event: BET_EVENT,
-        args: { gameId },
-        fromBlock: from,
-        toBlock: from + LOG_CHUNK - 1n,
-      });
-      for (const log of logs) if (log.args.user) addresses.add(log.args.user);
-    } catch {
-      // A rejected page is not fatal — view calls below still price whoever
-      // we did find, and a missed bettor simply does not appear.
+  if (!list) {
+    const addresses = new Set<`0x${string}`>();
+    let from = BigInt(fromBlock);
+
+    for (let i = 0; i < MAX_CHUNKS; i++) {
+      try {
+        const logs = await client.getLogs({
+          ...contract,
+          event: BET_EVENT,
+          args: { gameId },
+          fromBlock: from,
+          toBlock: from + LOG_CHUNK - 1n,
+        });
+        for (const log of logs) if (log.args.user) addresses.add(log.args.user);
+      } catch {
+        // A rejected page is not fatal — the view calls below still price
+        // whoever we did find, and a missed bettor simply does not appear.
+      }
+      from += LOG_CHUNK;
     }
-    from += LOG_CHUNK;
+
+    list = [...addresses];
+    // Only safe to remember once no further bets can arrive.
+    if (closed) bettorCache.set(key, list);
   }
 
-  if (addresses.size === 0) return [];
+  if (list.length === 0) return [];
 
-  const list = [...addresses];
   const reads = await client.multicall({
     contracts: list.flatMap((address) => [
       { ...contract, functionName: "stakesOf" as const, args: [gameId, address] },
       { ...contract, functionName: "payoutOf" as const, args: [gameId, address] },
+      { ...contract, functionName: "claimed" as const, args: [gameId, address] },
     ]),
   });
 
+  const winPool = game.imposterId === null ? 0 : (game.pools[game.imposterId] ?? 0);
+
   return list
     .map((address, i) => {
-      const stakes = reads[i * 2];
-      const payout = reads[i * 2 + 1];
+      const stakes = reads[i * 3];
+      const payout = reads[i * 3 + 1];
+      const claimedRead = reads[i * 3 + 2];
       if (stakes.status !== "success") return null;
 
       const per = (stakes.result as readonly bigint[]).map((n) => Number(formatEther(n)));
+      const staked = per.reduce((a, b) => a + b, 0);
+      const onWinner = game.imposterId === null ? 0 : (per[game.imposterId] ?? 0);
+
+      /* Entitlement, mirroring payoutOf but without the claimed check, so the
+         figure survives being collected. An abandoned game refunds the stake;
+         so does a resolved game nobody picked correctly (prd.md §3). */
+      const won = !game.resolved
+        ? 0
+        : game.abandoned || winPool === 0
+          ? staked
+          : (game.totalPool * onWinner) / winPool;
+
       return {
         address,
-        staked: per.reduce((a, b) => a + b, 0),
-        onWinner: imposterId === null ? 0 : (per[imposterId] ?? 0),
+        staked,
+        onWinner,
         payout:
           payout.status === "success" ? Number(formatEther(payout.result as bigint)) : 0,
+        won,
+        claimed: claimedRead.status === "success" ? Boolean(claimedRead.result) : false,
       };
     })
     .filter((b): b is Bettor => b !== null && b.staked > 0);
@@ -234,9 +276,11 @@ async function compute(limit: number): Promise<Stats> {
       row.staked += b.staked;
       row.games += 1;
       if (g.resolved) {
-        row.returned += b.payout;
+        // `won`, never `payout` — payout drops to zero on collection, so using
+        // it would mean claiming your winnings lowered your ranking.
+        row.returned += b.won;
         if (b.onWinner > 0) row.hits += 1;
-        row.best = Math.max(row.best, b.payout - b.staked);
+        row.best = Math.max(row.best, b.won - b.staked);
       }
       rows.set(key, row);
     }

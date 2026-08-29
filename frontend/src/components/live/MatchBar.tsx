@@ -62,9 +62,14 @@ export function MatchBar({ match }: { match: Match }) {
         >
           Match {match.id} — “{match.title}”
         </div>
+        {/* `spectators` used to be invented from the game seed, which is a
+            fabricated number on a screen where everything else is read back
+            from the contract. The pool is the real measure of a crowd. */}
         <div style={{ fontSize: 12, color: "var(--color-neutral-700)", marginTop: 2 }}>
           Round {match.round} of {match.totalRounds} · {match.aliveCount} agents still
-          employed · {match.spectators.toLocaleString()} nosy spectators
+          employed · {match.poolMon > 0
+            ? `${match.poolMon.toFixed(2)} MON in the pool`
+            : "no bets yet"}
         </div>
       </div>
 

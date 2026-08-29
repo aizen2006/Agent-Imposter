@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { reap } from "@/store/reap";
 import { buildStats } from "@/store/stats";
 
 export const runtime = "nodejs";
@@ -17,6 +18,11 @@ export const dynamic = "force-dynamic";
    breaking. */
 
 export async function GET() {
+  /* Settle anything that finished while nobody was watching. Rate-limited
+     internally, so the lobby polling this is not a problem — it means a busy
+     floor keeps itself resolved without a cron (prd.md §16). */
+  void reap().catch(() => {});
+
   const stats = await buildStats().catch(() => null);
 
   if (!stats) {

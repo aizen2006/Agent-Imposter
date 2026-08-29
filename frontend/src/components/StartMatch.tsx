@@ -28,14 +28,18 @@ export function StartMatch() {
       stash({
         id,
         marketId: data.marketId,
+        startedAt: data.startedAt,
         frames: data.frames,
         durations: data.durations,
+        pauseBefore: data.pauseBefore,
         ticket: data.ticket ?? null,
         brain,
         market: data.market,
       });
 
-      setNote(`${events} events in ${(generatedInMs / 1000).toFixed(1)}s — ${brain}`);
+      setNote(
+        `${events} events in ${(generatedInMs / 1000).toFixed(1)}s — ${brain}. Betting is open.`,
+      );
       router.push(`/game/${id}`);
     } catch {
       setState("failed");

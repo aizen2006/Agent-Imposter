@@ -5,7 +5,7 @@ import { Chrome, PageHead } from "@/components/Chrome";
 import { StartMatch } from "@/components/StartMatch";
 import { AGENTS } from "@/lib/match";
 import { MARKET_ADDRESS } from "@/chain/monad";
-import { ago, mon, useStats, type GameStat } from "@/lib/useStats";
+import { ago, mon, useNow, useStats, type GameStat } from "@/lib/useStats";
 
 /* The lobby (prd.md §15.5).
 
@@ -21,7 +21,11 @@ const nameOf = (i: number | null) =>
 export default function Lobby() {
   const { stats, loading } = useStats(10000);
 
-  const live = stats.games.filter((g) => !g.resolved);
+  const now = useNow();
+  /* Matches that have not started are the ones you can still comfortably bet
+     on, so they come first — the whole point of the countdown (prd.md §16). */
+  const opening = stats.games.filter((g) => !g.resolved && g.startedAt > now);
+  const live = stats.games.filter((g) => !g.resolved && g.startedAt <= now);
   const settled = stats.games.filter((g) => g.resolved);
 
   return (
@@ -40,15 +44,30 @@ export default function Lobby() {
 
       <div style={{ padding: "0 48px 44px", display: "grid", gap: 28 }}>
         <section>
-          <Heading dot>Live now</Heading>
-          {live.length === 0 ? (
+          <Heading dot>Doors open — betting now</Heading>
+          {opening.length === 0 ? (
             <Note>
-              {loading ? "Looking for open markets…" : "Nothing running right now."}
+              {loading
+                ? "Looking for open markets…"
+                : "No match is taking bets. Start one and everybody gets 90 seconds to back a suspect."}
             </Note>
           ) : (
             <Grid>
+              {opening.map((g) => (
+                <Card key={g.numericId} game={g} opening now={now} />
+              ))}
+            </Grid>
+          )}
+        </section>
+
+        <section>
+          <Heading dot>Playing now</Heading>
+          {live.length === 0 ? (
+            <Note>{loading ? "…" : "Nothing on the floor right now."}</Note>
+          ) : (
+            <Grid>
               {live.map((g) => (
-                <Card key={g.numericId} game={g} live />
+                <Card key={g.numericId} game={g} live now={now} />
               ))}
             </Grid>
           )}
@@ -85,7 +104,7 @@ export default function Lobby() {
           ) : (
             <Grid>
               {settled.slice(0, 9).map((g) => (
-                <Card key={g.numericId} game={g} />
+                <Card key={g.numericId} game={g} now={now} />
               ))}
             </Grid>
           )}
@@ -142,9 +161,20 @@ const Grid = ({ children }: { children: React.ReactNode }) => (
   </div>
 );
 
-function Card({ game, live }: { game: GameStat; live?: boolean }) {
+function Card({
+  game,
+  live,
+  opening,
+  now,
+}: {
+  game: GameStat;
+  live?: boolean;
+  opening?: boolean;
+  now: number;
+}) {
   const top = game.pools.indexOf(Math.max(...game.pools));
   const crowdRight = game.totalPool > 0 && top === game.imposterId;
+  const startsIn = Math.max(0, Math.ceil((game.startedAt - now) / 1000));
 
   return (
     <Link
@@ -153,7 +183,14 @@ function Card({ game, live }: { game: GameStat; live?: boolean }) {
       style={{ display: "block", textDecoration: "none", color: "inherit" }}
     >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        {live ? (
+        {opening ? (
+          <span
+            className="badge badge-accent"
+            style={{ animation: "pulseDot 1.6s ease-in-out infinite" }}
+          >
+            BETTING OPEN
+          </span>
+        ) : live ? (
           <span className="badge badge-accent">LIVE</span>
         ) : game.abandoned ? (
           <span className="badge badge-ghost">REFUNDED</span>
@@ -172,11 +209,13 @@ function Card({ game, live }: { game: GameStat; live?: boolean }) {
       </div>
 
       <div className="mono" style={{ fontSize: 12, marginTop: 4, color: "var(--color-neutral-700)" }}>
-        {game.resolved && !game.abandoned
-          ? `${nameOf(game.imposterId)} was lying`
-          : live
-            ? "in progress — join it"
-            : "settled"}
+        {opening
+          ? `starts in ${Math.floor(startsIn / 60)}:${String(startsIn % 60).padStart(2, "0")}`
+          : game.resolved && !game.abandoned
+            ? `${nameOf(game.imposterId)} was lying`
+            : live
+              ? "in progress — join it"
+              : "settled"}
       </div>
 
       <div

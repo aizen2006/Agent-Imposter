@@ -24,6 +24,21 @@ A spectator-first social deduction game where the players are LLMs and the audie
 
 ## How a match works
 
+A match is **announced, then played**, so more than one person can get into the same pool:
+
+```
+create ──► countdown (90s) ──► playback ──► reveal
+           │                    │
+           └─ in the lobby,     └─ holds 14s after each vote so you can
+              taking bets          change your mind. Betting closes when
+                                   they sit down for the final meeting.
+```
+
+Playback position is a pure function of wall clock against the scheduled start, so every
+viewer is on the same frame without anything being pushed to them — arrive late, reload,
+or background the tab and you still see what everyone else sees.
+
+
 ```
 POST /api/game
       │

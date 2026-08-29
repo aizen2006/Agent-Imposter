@@ -124,7 +124,7 @@ export type ChainResult = {
 
 /** Opens the market. The imposter is committed here, before a single MON is
     staked, so the outcome is provably fixed in advance. */
-export async function openMarket(game: Game, windowSeconds = 300): Promise<ChainResult> {
+export async function openMarket(game: Game, closeAtMs: number): Promise<ChainResult> {
   const client = wallet();
   if (!client) return { ok: false, reason: "resolver wallet unavailable" };
   if (!(await onTestnet())) return { ok: false, reason: "not on Monad testnet" };
@@ -137,7 +137,10 @@ export async function openMarket(game: Game, windowSeconds = 300): Promise<Chain
   }
 
   try {
-    const closeAt = BigInt(Math.floor(Date.now() / 1000) + windowSeconds);
+    /* Betting closes when the final meeting begins — through the countdown and
+       into the first part of playback, so odds still move as evidence lands.
+       Everyone starts on the same frame, so nobody gains by watching faster. */
+    const closeAt = BigInt(Math.floor(closeAtMs / 1000));
 
     // Read the height before sending rather than waiting on a receipt: the tx
     // lands a few blocks later and bets later still, so scanning from here

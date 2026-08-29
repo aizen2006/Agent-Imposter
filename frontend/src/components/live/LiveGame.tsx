@@ -2,25 +2,28 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { PreMatch } from "./PreMatch";
 import { Replay, Shell } from "./Replay";
 import { useHandoff, type Handoff } from "@/lib/handoff";
 
-/* The live match.
+/* A match, in whichever of its three phases it is in.
+
+   Betting window -> playback -> over. Which one you get is decided purely by
+   comparing the wall clock to startedAt, so every viewer is on the same frame
+   at the same moment without anything being synchronised over a wire. That is
+   what makes several people able to bet into one pool rather than each of them
+   playing their own game (prd.md §16).
 
    Two ways in. Whoever pressed the button already has the frames in their tab,
-   so their playback starts with no round trip. Everyone else fetches the same
-   match from the shared store and seeks to wherever it has got to — which is
-   what makes several people able to watch one game, and therefore what makes
-   the pool mean anything (prd.md §15.0). */
+   so nothing is fetched. Everyone else pulls the same match from the shared
+   store. */
 
-type State =
-  | { kind: "loading" }
-  | { kind: "playing"; match: Handoff; startAt: number }
-  | { kind: "gone" };
+type Remote = { kind: "loading" } | { kind: "ready"; match: Handoff } | { kind: "gone" };
 
 export function LiveGame({ id }: { id: string; speed?: number }) {
   const { ready, match: local } = useHandoff(id);
-  const [remote, setRemote] = useState<State>({ kind: "loading" });
+  const [remote, setRemote] = useState<Remote>({ kind: "loading" });
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     if (!ready || local) return;
@@ -34,18 +37,18 @@ export function LiveGame({ id }: { id: string; speed?: number }) {
         if (cancelled) return;
 
         setRemote({
-          kind: "playing",
+          kind: "ready",
           match: {
             id: m.id,
             marketId: m.numericId,
+            startedAt: m.startedAt,
             frames: m.frames,
             durations: m.durations,
+            pauseBefore: m.pauseBefore,
             ticket: m.ticket ?? null,
             brain: "shared",
             market: { open: true },
           },
-          // Join where the match actually is, not at the beginning.
-          startAt: Date.now() - m.startedAt,
         });
       } catch {
         if (!cancelled) setRemote({ kind: "gone" });
@@ -57,29 +60,48 @@ export function LiveGame({ id }: { id: string; speed?: number }) {
     };
   }, [id, ready, local]);
 
-  const active = local ?? (remote.kind === "playing" ? remote.match : null);
+  const match = local ?? (remote.kind === "ready" ? remote.match : null);
 
   /* Reveal on-chain when playback ends. The ticket is the sealed answer the
      server handed out — opaque here, meaningful there, and it refuses to open
      before the match could have finished. */
   const reveal = useCallback(() => {
-    if (!active?.ticket) return;
+    if (!match?.ticket) return;
     void fetch("/api/game/resolve", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ticket: active.ticket }),
+      body: JSON.stringify({ ticket: match.ticket }),
     }).catch(() => {});
-  }, [active]);
+  }, [match]);
+
+  const begin = useCallback(() => setNow(Date.now()), []);
 
   if (!ready) return null;
-  if (!active) return remote.kind === "gone" ? <Gone /> : null;
+  if (!match) return remote.kind === "gone" ? <Gone /> : null;
+
+  const startAt = match.startedAt ?? 0;
+  const marketId = match.marketId ? BigInt(match.marketId) : undefined;
+
+  // Doors still open: bet against the opening board.
+  if (startAt > now) {
+    return (
+      <PreMatch
+        match={match.frames[0]}
+        marketId={marketId}
+        startAt={startAt}
+        onStart={begin}
+      />
+    );
+  }
 
   return (
     <Replay
-      frames={active.frames}
-      durations={active.durations}
-      marketId={active.marketId ? BigInt(active.marketId) : undefined}
-      startAtMs={local ? 0 : remote.kind === "playing" ? remote.startAt : 0}
+      frames={match.frames}
+      durations={match.durations}
+      pauseBefore={match.pauseBefore}
+      marketId={marketId}
+      // Everyone lands on the frame the clock says, whenever they arrived.
+      startAtMs={Math.max(0, now - startAt)}
       onEnd={reveal}
     />
   );

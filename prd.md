@@ -1297,3 +1297,153 @@ Two decisions changed during the build:
 Not covered by any of this: betting still needs a wallet, so the leaderboard
 stays empty until real bets land. Seed it from two wallets before demoing —
 §15.7 says why an empty leaderboard is worse than none.
+
+---
+
+# 16. Making It Actually Multiplayer
+
+§15 made matches *shared* — anyone could open one and watch. It did not make them
+*bettable by more than one person*, which is a different thing, and the gap was
+entirely in timing.
+
+## 16.0 Why sharing was not enough
+
+Three lines of the old create route decided it:
+
+```ts
+const startedAt = Date.now();          // the match begins NOW
+openMarket(game)                       // closeAt = now + 300s (never binds)
+// ...resolve() fires when playback ends, ~80s later
+```
+
+`resolve()` sets `resolved = true`, and `bet()` rejects a resolved game. So the real
+betting window was **about 64 seconds, beginning the instant somebody clicked a button
+nobody else had been warned about**. The 300-second `closeAt` never bound, because the
+reveal always beat it. A second bettor had to discover the match and get a transaction
+confirmed inside a minute of a private event.
+
+That is not a thin market. It is a coincidence with a market attached.
+
+Two smaller things pointed the same way:
+
+- **Resolution depended on a tab.** Whoever's playback finished first called `resolve`.
+  If that person closed the tab, everyone else's stake sat unresolved until the 24h
+  `abandon()` window.
+- **`spectators` was fabricated.** `1 + (game.seed % 1500)` — an invented crowd, on a
+  screen where every other number is read back from the contract.
+
+## 16.1 A schedule, not an instant
+
+```
+create ──► announce ──► countdown (90s) ──► playback ──► reveal
+           │                                 │
+           └── in the lobby, taking bets ────┘   betting closes at the final meeting
+```
+
+`startedAt = Date.now() + LOBBY_MS`. The match is announced immediately and begins after
+the countdown, so anyone reading the lobby has a real window in which to act.
+
+Betting closes on-chain at `startedAt + closesAtMs` — the moment the final meeting
+begins. So staking runs through the countdown *and* into the first rounds, which keeps
+the odds moving as evidence lands. Nobody gains by watching faster, because everyone
+starts on the same frame.
+
+**Nothing is synchronised over a wire.** Playback position is a pure function of wall
+clock against `startedAt`, so a viewer who arrives late, reloads, or backgrounds the tab
+computes the same frame as everyone else. The seek machinery already existed for §15;
+scheduling is what made it meaningful.
+
+## 16.2 Intermissions — the round is over, now decide
+
+Continuous playback ran a match in ~80 seconds. Watchable; nearly impossible to bet on.
+By the time you had read an argument and decided it was a lie, the round had moved on.
+
+New information arrives when a vote lands, so that is where playback holds:
+
+```
+INTERMISSION_MS = 14s, inserted after each ejection except the last
+playback   74.3s ──► 102.3s
+betting window   64s ──► 182s   (90s countdown + 92s of play)
+```
+
+The pause is **part of the timeline**, added into `durations` by `planPlayback`, not a
+client-side stop. That matters: every viewer holds on the same frame at the same moment,
+so the odds they are all looking at are the same odds. It also means `closesAtMs` stays
+exact, and seek-on-join still lands correctly for someone arriving mid-intermission.
+
+No pause after the final vote — betting has already closed and the only thing left is the
+reveal.
+
+## 16.3 Reveal without a spectator
+
+`store/reap.ts` settles any match whose playback has finished but which nobody resolved,
+using the stored ticket. It is called opportunistically from `/api/stats`, which the lobby
+polls, so a busy floor reaps itself; `/api/reap` exposes it for a cron on top of that.
+
+Rate-limited internally, idempotent, and every guard still applies — the ticket refuses to
+open before the match could have finished, and the contract checks the reveal against the
+commitment posted before betting opened.
+
+## 16.4 What changed
+
+| | |
+|---|---|
+| `engine/timing.ts` | `LOBBY_MS`, `INTERMISSION_MS`, and `pauseBefore[]` in the plan |
+| `api/game` | schedules the start; `closeAt` is now the final meeting, not a fixed 300s |
+| `chain/resolver.ts` | `openMarket` takes an absolute close time |
+| `components/live/PreMatch.tsx` | countdown, the opening board, an invite-someone link |
+| `components/live/Replay.tsx` | renders intermissions as a stated betting window |
+| `components/live/LiveGame.tsx` | routes between countdown, playback and over, all from the clock |
+| `store/reap.ts`, `api/reap` | reveal without a spectator |
+| `MatchBar` | the invented spectator count replaced with the real pool |
+| `lobby`, home `LiveNow` | a "taking bets" state distinct from "playing now" |
+| `lib/useStats.ts` | `useNow()` — one ticking clock, via `useSyncExternalStore` |
+
+## 16.5 Verified
+
+```
+create            -> announced, starts in 84s, shared: true
+on-chain closeAt  -> 170s of betting from creation (was ~64s)
+intermissions     -> 2 x 14s, after the R1 and R2 votes only
+second client     -> sees the countdown, the board and the bet ticket
+leak check        -> no imposterId in any frame
+reap              -> resolved a finished match nobody was watching
+```
+
+## 16.6 Still open
+
+- **Nobody schedules matches.** Someone has to press the button. Vercel Hobby cron only
+  fires once a day, so "there is always a game about to start" needs either Pro, or a
+  first-visitor-creates heuristic with a cooldown.
+- **No presence.** The pool size stands in for a crowd, which is honest but does not tell
+  you whether anyone else is in the room right now.
+- **`LOBBY_MS` is a guess.** 90s is long enough to share a link and connect a wallet, and
+  short enough not to feel dead. Worth tuning against a real audience.
+
+## 16.7 Bug found in review: the Claim button that would not go away
+
+Reported against a real row — *"DELTA was the Imposter · 0.30 staked · lost · [Claim]"* — which
+is self-contradictory, and it was. Traced to game `2298955640` on chain, and it turned out to be
+three bugs sharing one cause.
+
+```
+winPool: 0      nobody backed DELTA, so the contract refunds every stake (§3)
+claimed: true   already collected; payoutOf therefore returns 0
+```
+
+1. **The button persisted after claiming.** `stats.ts` cached the whole `GameStat` for any
+   resolved game, on the reasoning that resolved games never change. They do:
+   `claimed[gameId][user]` flips on collection and `payoutOf` reads it. The cache went on
+   reporting 0.30 as claimable forever.
+2. **"lost" was wrong.** With no stake on the Imposter the position was *refunded*, not lost —
+   a payout without having been right. There are three outcomes, and the UI only had two.
+3. **Claiming lowered your ranking.** The leaderboard summed `payout`, which drops to zero on
+   collection, so cashing out reduced your net P&L.
+
+Fixes: cache only the log scan (immutable once betting closes) and re-read amounts every build;
+add `won` — entitlement independent of collection — and use it for P&L; add `claimed` and render
+a CLAIMED badge; refresh stats when a claim confirms rather than waiting out the poll. Also
+`{n} agents backed` was never pluralised.
+
+The lesson worth keeping: **"resolved" is not the same as "immutable".** A settled game still
+has state that moves.

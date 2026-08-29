@@ -37,7 +37,7 @@ export function GoldenGame({ speed = 1 }: { speed?: number }) {
 
   const played = useMemo(() => {
     if (!golden) return null;
-    const { durations, closesAtMs } = planPlayback(golden.events, speed);
+    const { durations, pauseBefore, closesAtMs } = planPlayback(golden.events, speed);
     let elapsed = 0;
     const frames = golden.events.map((_, i) => {
       elapsed += durations[i];
@@ -47,7 +47,7 @@ export function GoldenGame({ speed = 1 }: { speed?: number }) {
         spectators: 1204,
       });
     });
-    return { frames, durations };
+    return { frames, durations, pauseBefore };
   }, [golden, speed]);
 
   if (missing) return <Missing />;
@@ -57,6 +57,7 @@ export function GoldenGame({ speed = 1 }: { speed?: number }) {
     <Replay
       frames={played.frames}
       durations={played.durations}
+      pauseBefore={played.pauseBefore}
       banner={<Banner />}
       endLabel="Run a live match"
     />
