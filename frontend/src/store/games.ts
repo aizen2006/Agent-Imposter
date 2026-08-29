@@ -1,20 +1,17 @@
 import { runGame } from "@/engine/simulate";
 import type { Game } from "@/engine/types";
 
-/* In-memory game store (prd.md §2.3). Games are ephemeral — a DB buys nothing
-   in a six-hour build and costs schema, migrations and a connection string.
+/* Match generation. No store.
 
-   Held on globalThis so Next's dev-mode module reloading does not drop games
-   mid-playback, which otherwise 404s the stream the moment you edit a file. */
+   There used to be an in-memory Map here (prd.md §2.3 — "a DB buys nothing in
+   a six-hour build"). That reasoning holds for a single long-lived process and
+   breaks completely on Vercel: the lambda that generates a match is not the
+   lambda that streams it, so every playback request landed on an instance that
+   had never heard of the game and 404'd.
 
-const store = ((globalThis as { __games?: Map<string, Game> }).__games ??= new Map<string, Game>());
-
-/** Newest first, so a reload can find the match that is actually running. */
-export function listGames(): Game[] {
-  return [...store.values()].sort((a, b) => b.seed - a.seed);
-}
-
-export const getGame = (id: string) => store.get(id);
+   The fix was to stop needing the state at all. The route projects the whole
+   match into redacted frames and hands them to the browser, which replays them
+   locally — so nothing needs to be remembered between requests. */
 
 export async function createGame(opts: { llm?: boolean } = {}): Promise<Game> {
   const id = `g${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
@@ -26,13 +23,5 @@ export async function createGame(opts: { llm?: boolean } = {}): Promise<Game> {
     ({ createLangChainBrain: brain } = await import("@/agents/brain"));
   }
 
-  const game = await runGame({ id, brain });
-  store.set(id, game);
-
-  // Keep the process from growing without bound over a long demo session.
-  if (store.size > 20) {
-    for (const key of [...store.keys()].slice(0, store.size - 20)) store.delete(key);
-  }
-
-  return game;
+  return runGame({ id, brain });
 }

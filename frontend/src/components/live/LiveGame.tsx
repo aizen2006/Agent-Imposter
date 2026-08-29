@@ -1,127 +1,54 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
-import { LiveMatch } from "./LiveMatch";
-import { demoMatch, type Match } from "@/lib/match";
+import { useCallback } from "react";
+import { Replay, Shell } from "./Replay";
+import { useHandoff } from "@/lib/handoff";
 
-/* Subscribes to the playback stream and re-renders on each projected snapshot.
-   The component tree below is unchanged from the static build — only where its
-   `Match` comes from is different, which is the whole point of the projection
-   seam (prd.md §7.2). */
+/* The live match.
 
-type Status = "connecting" | "live" | "done" | "error";
+   The whole match was generated and projected server-side before this page
+   loaded; it arrives through sessionStorage rather than over a connection.
+   That is what makes it work on serverless — see store/games.ts. */
 
-export function LiveGame({ id, speed = 1 }: { id: string; speed?: number }) {
-  const [match, setMatch] = useState<Match | null>(null);
-  const [status, setStatus] = useState<Status>("connecting");
-  const [marketId, setMarketId] = useState<bigint | undefined>();
-  const source = useRef<EventSource | null>(null);
+export function LiveGame({ id }: { id: string; speed?: number }) {
+  const { ready, match } = useHandoff(id);
 
-  useEffect(() => {
-    const es = new EventSource(`/api/game/${id}/stream?speed=${speed}`);
-    source.current = es;
+  /* Reveal on-chain when playback ends. The ticket is the sealed answer the
+     server handed us at creation — opaque here, meaningful there. */
+  const reveal = useCallback(() => {
+    if (!match?.ticket) return;
+    void fetch("/api/game/resolve", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ticket: match.ticket }),
+    }).catch(() => {});
+  }, [match]);
 
-    es.addEventListener("meta", (e) => {
-      const meta = JSON.parse((e as MessageEvent).data) as { marketId?: string };
-      if (meta.marketId) setMarketId(BigInt(meta.marketId));
-    });
-
-    es.addEventListener("frame", (e) => {
-      setMatch(JSON.parse((e as MessageEvent).data) as Match);
-      setStatus("live");
-    });
-
-    es.addEventListener("done", () => {
-      setStatus("done");
-      es.close();
-      // Reveal the Imposter on-chain. Every viewer fires this; the contract
-      // rejects the second one with "already resolved", which is expected.
-      void fetch(`/api/game/${id}/resolve`, { method: "POST" }).catch(() => {});
-    });
-
-    es.onerror = () => {
-      // EventSource retries on its own; only surface a hard failure once the
-      // browser has actually given up.
-      if (es.readyState === EventSource.CLOSED) setStatus("error");
-    };
-
-    return () => es.close();
-  }, [id, speed]);
-
-  if (!match) return <Waiting status={status} />;
+  if (!ready) return null;
+  if (!match) return <Gone />;
 
   return (
-    <>
-      <LiveMatch match={match} marketId={marketId} />
-      {status === "done" && (
-        <div style={{ textAlign: "center", paddingBottom: 48 }}>
-          <Link href="/" className="btn btn-primary" style={{ padding: "12px 28px" }}>
-            Run another match
-          </Link>
-        </div>
-      )}
-    </>
+    <Replay
+      frames={match.frames}
+      durations={match.durations}
+      marketId={match.marketId ? BigInt(match.marketId) : undefined}
+      onEnd={reveal}
+    />
   );
 }
 
-/** The first frame is ~400ms away, so this is mostly for reconnects and errors. */
-function Waiting({ status }: { status: Status }) {
+function Gone() {
   return (
-    <div style={{ maxWidth: 1320, margin: "0 auto", padding: "28px 24px 64px", width: "100%" }}>
-      <div
-        style={{
-          background: "var(--color-bg)",
-          borderRadius: "var(--radius-shell)",
-          boxShadow: "var(--shadow-shell)",
-          padding: "80px 48px",
-          textAlign: "center",
-        }}
-      >
-        {status === "error" ? (
-          <>
-            <h3 style={{ margin: 0 }}>That match is gone.</h3>
-            <p style={{ color: "var(--color-neutral-700)", marginTop: 8 }}>
-              Games are held in memory and do not survive a server restart.
-            </p>
-            <Link
-              href="/"
-              className="btn btn-primary"
-              style={{ marginTop: 16, padding: "12px 24px" }}
-            >
-              Start a new one
-            </Link>
-          </>
-        ) : (
-          <>
-            <div
-              style={{
-                display: "inline-flex",
-                gap: 6,
-                marginBottom: 14,
-              }}
-            >
-              {[0, 0.2, 0.4].map((d) => (
-                <span
-                  key={d}
-                  style={{
-                    width: 9,
-                    height: 9,
-                    borderRadius: "50%",
-                    background: "var(--color-accent)",
-                    animation: "pulseDot 1s ease-in-out infinite",
-                    animationDelay: `${d}s`,
-                  }}
-                />
-              ))}
-            </div>
-            <h3 style={{ margin: 0 }}>Everyone is getting into position.</h3>
-          </>
-        )}
-      </div>
-    </div>
+    <Shell>
+      <h3 style={{ margin: 0 }}>That match isn&rsquo;t in this tab.</h3>
+      <p style={{ color: "var(--color-neutral-700)", marginTop: 8 }}>
+        Matches are generated on demand and played back in the tab that asked for
+        them. Opening the link somewhere else starts from nothing.
+      </p>
+      <Link href="/" className="btn btn-primary" style={{ marginTop: 16, padding: "12px 24px" }}>
+        Start a new one
+      </Link>
+    </Shell>
   );
 }
-
-/** Static fallback used by the golden-game demo path. */
-export const staticMatch = demoMatch;

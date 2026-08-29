@@ -1,10 +1,24 @@
 import { NextResponse } from "next/server";
 import { openMarket } from "@/chain/resolver";
+import { seal } from "@/chain/ticket";
+import { project } from "@/engine/project";
+import { planPlayback } from "@/engine/timing";
 import { createGame } from "@/store/games";
 
 export const runtime = "nodejs";
-/** The whole match is generated here, before the first frame renders. */
-export const maxDuration = 300;
+/** Generation is the only slow part: ~23s with real models, ~1s with the stub.
+    60 is Vercel's Hobby ceiling; asking for more there is silently clamped. */
+export const maxDuration = 60;
+
+/* Creates a match and hands back the whole thing, already projected.
+
+   The frames are redacted snapshots — the same `Match` objects the UI used to
+   receive one at a time over SSE. Sending them all at once removes the only
+   two things that could not work on serverless: server-held state between
+   requests, and a connection held open longer than a function may live.
+
+   ~7 KB gzipped for a full match, so this is cheaper than the stream it
+   replaces. Playback is still simulate-then-replay; only the transport moved. */
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
@@ -15,15 +29,25 @@ export async function POST(req: Request) {
 
   // Commit the Imposter on-chain before anyone can stake. Best-effort: a
   // missing key or a flaky RPC degrades to an off-chain game rather than
-  // failing the request (prd.md §27). Nothing about the chain may take the
-  // game down — that is the whole reason settlement is decoupled.
+  // failing the request (prd.md §27).
   const market = await openMarket(game).catch((err: unknown) => ({
     ok: false as const,
     reason: err instanceof Error ? err.message.split("\n")[0] : "chain unavailable",
   }));
 
-  // Only ever the id and the public market handle. The Game object holds
-  // imposterId and salt, and neither leaves this process (prd.md §6.3).
+  const { durations, totalMs, closesAtMs } = planPlayback(game.events);
+  const matchId = Number(game.numericId % BigInt(10000));
+
+  let elapsed = 0;
+  const frames = game.events.map((_, i) => {
+    elapsed += durations[i];
+    return project(game.events, i + 1, {
+      matchId,
+      closesIn: Math.max(0, Math.round((closesAtMs - elapsed) / 1000)),
+      spectators: 1 + (game.seed % 1500),
+    });
+  });
+
   return NextResponse.json({
     id: game.id,
     marketId: game.numericId.toString(),
@@ -33,5 +57,15 @@ export async function POST(req: Request) {
     market: market.ok
       ? { open: true, hash: market.hash }
       : { open: false, reason: market.reason },
+
+    // Redacted snapshots. `Match` has no field that can hold imposterId, which
+    // is what makes this safe to hand to a browser at all (prd.md §6.3).
+    frames,
+    durations,
+    totalMs: Math.round(totalMs),
+
+    // The answer, encrypted with a key only the server holds. The browser
+    // carries it through playback and hands it back to reveal. Opaque to it.
+    ticket: seal(game.numericId, game.imposterId, game.salt),
   });
 }

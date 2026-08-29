@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { stash } from "@/lib/handoff";
 
 /* One click, no configuration (prd.md §57). The whole match — every move,
    argument and vote — is generated before the button stops spinning, which is
@@ -19,7 +20,21 @@ export function StartMatch() {
     try {
       const res = await fetch("/api/game", { method: "POST", body: "{}" });
       if (!res.ok) throw new Error(await res.text());
-      const { id, events, brain, generatedInMs } = await res.json();
+      const data = await res.json();
+      const { id, events, brain, generatedInMs } = data;
+
+      // The server keeps nothing, so the match travels with us to the next
+      // page. Everything here is already redacted — see the create route.
+      stash({
+        id,
+        marketId: data.marketId,
+        frames: data.frames,
+        durations: data.durations,
+        ticket: data.ticket ?? null,
+        brain,
+        market: data.market,
+      });
+
       setNote(`${events} events in ${(generatedInMs / 1000).toFixed(1)}s — ${brain}`);
       router.push(`/game/${id}`);
     } catch {

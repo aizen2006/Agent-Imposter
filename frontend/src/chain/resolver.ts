@@ -145,8 +145,15 @@ export async function openMarket(game: Game, windowSeconds = 300): Promise<Chain
 }
 
 /** Reveals the Imposter. Also hard-closes betting, which is what makes an
-    early crew win settle immediately rather than waiting out the clock. */
-export async function settleMarket(game: Game): Promise<ChainResult> {
+    early crew win settle immediately rather than waiting out the clock.
+
+    Takes the three fields rather than a Game because on serverless the reveal
+    arrives as a sealed ticket, not as the object that generated it. */
+export async function settleMarket(game: {
+  numericId: bigint;
+  imposterId: AgentIndex;
+  salt: `0x${string}`;
+}): Promise<ChainResult> {
   const client = wallet();
   if (!client) return { ok: false, reason: "resolver wallet unavailable" };
   if (!(await onTestnet())) return { ok: false, reason: "not on Monad testnet" };
