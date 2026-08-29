@@ -1,0 +1,37 @@
+{
+  "contract": "ImposterMarket",
+  "address": "0xFc7AcE219951bE036ED78C2c8D1B338107AdD7d9",
+  "network": {
+    "name": "Monad Testnet",
+    "chainId": 10143,
+    "rpc": "https://testnet-rpc.monad.xyz",
+    "currency": "MON"
+  },
+  "deployment": {
+    "txHash": "0x6db59a080b1ec882c1349f7ac26a0e0a85f6e0eb73b334cd166e55139b5c0355",
+    "blockNumber": 57865094,
+    "blockHash": "0xce16a09c9dcd6344e3ad0618a5c0d22c1f07435022c5482cc21062fba34a9a3d",
+    "timestamp": 1787988417,
+    "deployedAt": "2026-08-29T07:26:57.000Z",
+    "deployer": "0x462dD91a5d71e738411f0d021F12aa94052e19E9",
+    "gasUsed": 2212341,
+    "constructorArgs": {
+      "_resolver": "0x0000000000000000000000000000000000000000"
+    }
+  },
+  "resolver": "0x462dD91a5d71e738411f0d021F12aa94052e19E9",
+  "compiler": {
+    "version": "0.8.24",
+    "optimizer": true,
+    "runs": 200,
+    "source": "contract/ImposterMarket.sol"
+  },
+  "verifiedOnChain": {
+    "checkedAt": "2026-08-29T07:26:57.000Z",
+    "note": "Read back via eth_call to confirm the deployed build is the post-audit version.",
+    "AGENT_COUNT": 6,
+    "NO_AGENT": 255,
+    "RESOLVE_WINDOW": 86400,
+    "resolver": "0x462dD91a5d71e738411f0d021F12aa94052e19E9"
+  }
+}

@@ -1,7 +1,9 @@
-import { LiveMatch } from "@/components/live/LiveMatch";
-import { demoMatch } from "@/lib/match";
+import { LiveGame } from "@/components/live/LiveGame";
 
-export default async function GamePage({ params }: PageProps<"/game/[id]">) {
-  await params; // the engine will key off this once simulate.ts lands
-  return <LiveMatch match={demoMatch} />;
+export default async function GamePage({ params, searchParams }: PageProps<"/game/[id]">) {
+  const { id } = await params;
+  const q = await searchParams;
+  const speed = Number(Array.isArray(q.speed) ? q.speed[0] : (q.speed ?? 1)) || 1;
+
+  return <LiveGame id={id} speed={speed} />;
 }

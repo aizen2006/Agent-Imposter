@@ -1,5 +1,5 @@
-import Link from "next/link";
 import { Crewmate } from "@/components/Crewmate";
+import { StartMatch } from "@/components/StartMatch";
 import { AGENTS } from "@/lib/match";
 
 export default function Lobby() {
@@ -50,12 +50,7 @@ export default function Lobby() {
           ))}
         </div>
 
-        <Link href="/game/demo" className="btn btn-primary btn-lock" style={{ maxWidth: 340 }}>
-          Start new match
-          <span className="mono" style={{ fontSize: 12, opacity: 0.85 }}>
-            6 agents · 3 rounds
-          </span>
-        </Link>
+        <StartMatch />
       </div>
     </div>
   );
