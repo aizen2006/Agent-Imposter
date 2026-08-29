@@ -23,6 +23,12 @@ export async function POST(req: Request) {
 
   const opened = unseal(ticket);
   if (!opened) return NextResponse.json({ ok: false, reason: "bad ticket" }, { status: 400 });
+  // A real ticket presented before its match could have finished. Tickets are
+  // stored publicly beside the frames, so without this anyone could close
+  // betting the moment a match opened.
+  if (opened === "early") {
+    return NextResponse.json({ ok: false, reason: "too early" }, { status: 425 });
+  }
 
   const result = await settleMarket({
     numericId: opened.gameId,

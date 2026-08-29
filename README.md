@@ -76,6 +76,19 @@ Every on-chain call is best-effort. No private key, flaky RPC, rejected transact
 
 ---
 
+## Pages
+
+| | |
+|---|---|
+| `/` | Home — hero, how it works, live markets, the crew's record, recent verdicts |
+| `/lobby` | Every match on the floor. Join a running one and it picks up where it is |
+| `/leaderboard` | Net P&L across settled markets, with hit rate beside it |
+| `/my-bets` | Your positions, and anything the contract still owes you |
+| `/game/[id]` | A match, live or joined late |
+| `/game/golden` | The recorded fallback — no network, no model, no chain |
+
+---
+
 ## Quick start
 
 **Requirements:** [Bun](https://bun.sh) 1.4+, an OpenAI API key (optional), a wallet with Monad testnet MON (optional).
@@ -267,8 +280,10 @@ bun --env-file=.env.local src/engine/golden.ts 10 --llm   # re-bake the recorded
 
 | Route | Does |
 |---|---|
-| `POST /api/game` | Generates a full match, commits the Imposter on-chain, returns every redacted frame plus a sealed reveal ticket |
-| `POST /api/game/resolve` | Reveals on-chain from that ticket. Idempotent — every viewer calls it |
+| `POST /api/game` | Generates a full match, commits the Imposter on-chain, publishes it, returns every redacted frame plus a sealed reveal ticket |
+| `GET /api/match/[id]` | Serves a shared match to anyone who did not generate it |
+| `POST /api/game/resolve` | Reveals on-chain from that ticket. Idempotent, and refuses to fire before the match could have finished |
+| `GET /api/stats` | Chain-derived aggregate behind the home page, lobby and leaderboard |
 
 Two routes, no state between them. See [Deploying](#deploying).
 
@@ -333,11 +348,20 @@ failed immediately, because the lambda that generated a match is not the lambda 
 it — every playback 404'd right after creation. The SSE stream had a second problem too: ~80s of
 playback outlives what a serverless function is allowed to run.
 
+**Matches are shared through Blob storage.** `POST /api/game` publishes the frames so anyone can
+watch, and a late joiner seeks to wherever the match has got to rather than restarting it. This
+is what makes the parimutuel pool mean anything — before it, every viewer generated a private
+match and each pool had exactly one bettor in it. Locally, with no Blob token, matches fall back
+to a directory in the OS temp dir so the whole thing is developable without provisioning
+anything; on Vercel the token decides, because each lambda has its own `/tmp`.
+
 **The reveal travels as a sealed ticket.** Resolution needs the imposter and the salt, which
 cannot go to the browser in the clear. So the server encrypts them (AES-256-GCM, key derived
 from `RESOLVER_PK`), the browser carries the ciphertext through playback, and hands it back at
 the end. Opaque to the client, and a tampered ticket fails authentication — and would still have
-to satisfy the on-chain commitment.
+to satisfy the on-chain commitment. The ticket also carries a `revealAt` timestamp *inside* the
+ciphertext, so publishing it alongside the frames cannot be used to end a match early and
+hard-close betting.
 
 Set the same environment variables in the Vercel dashboard as in `.env.local`. Notes:
 
@@ -347,6 +371,7 @@ Set the same environment variables in the Vercel dashboard as in `.env.local`. N
 | **`maxDuration`** | 60s, set in the create route. Generation takes ~23s with real models, ~1s with the stub. 60 is the Hobby ceiling; Pro allows 300 |
 | **Response size** | ~330 KB raw, ~4 KB after Vercel's edge compression. Well under the 4.5 MB function limit |
 | **`RESOLVER_PK`** | Without it there is no market *and* no reveal ticket — the game plays off-chain |
+| **`BLOB_READ_WRITE_TOKEN`** | Create a Blob store in the Vercel dashboard. Without it matches are not shared: the lobby is empty and each match plays only in the tab that made it |
 
 A match lives in the tab that asked for it, so a `/game/[id]` link opened elsewhere shows "that
 match isn't in this tab" rather than a broken player. Sharing a running match is not a feature
@@ -371,10 +396,14 @@ Wrong network. The top bar shows a **Switch to Monad testnet** button — click 
 **Agents sound generic / repetitive**
 No `OPENAI_API_KEY`, so the stub brain is playing. That's expected.
 
-**"That match isn't in this tab"**
-Matches are played back in the tab that generated them (see [Deploying](#deploying)). Start a
-new one. If it happens right after creating a match, check that `sessionStorage` isn't blocked —
-private windows in some browsers disable it.
+**Lobby and leaderboard are empty**
+No `BLOB_READ_WRITE_TOKEN`, so matches aren't being shared and there is nothing to list. The
+leaderboard additionally needs real bets — it ranks wallets, so it stays empty until someone
+stakes.
+
+**"No such match"**
+Matches are kept for a day and then swept. If it happens right after creating one, storage is
+off — see above.
 
 **Deployed build shows the match ending immediately**
 That was the pre-serverless architecture and is fixed. If you see it again, you're on an old

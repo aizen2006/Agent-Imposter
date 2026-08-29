@@ -1107,3 +1107,193 @@ a live social-deduction drama and a crowd stakes money on reading it correctly.
 The AI is not generating text. It is moving, working, lying, sabotaging, killing, accusing, and
 voting. The audience is not chatting with an AI. They are **watching, predicting, and risking
 conviction.**
+
+---
+
+# 15. Next Surfaces — Lobby, Leaderboard, Home
+
+**Built.** Stage status at §15.8. Two measurements taken before writing this changed its shape, so they come
+first.
+
+## 15.0 The two findings
+
+**Finding 1 — the pool has exactly one bettor in it.**
+
+Every viewer who clicks *Start match* generates their own private match. The frames live in that
+tab (§2.3). So two people on the site are watching two different games, betting into two
+different markets. The parimutuel pool — the entire economic premise — currently has a
+population of one.
+
+That is not a bug in the market; the contract is fine. It is a missing surface. **A lobby is not
+a list page, it is the thing that makes the market mean anything**, and it is the reason to
+build any of this. Leaderboards and home-page stats are garnish until several people can watch
+the same match.
+
+**Finding 2 — the public RPC will not let us derive a leaderboard from history.**
+
+Measured against `https://testnet-rpc.monad.xyz`:
+
+```
+eth_getLogs is limited to a 100 range
+block time             0.30 s
+100-block window       30 s of chain time
+to cover 24h           2,861 requests                 <- not viable per pageview
+one game's 300s window ~994 blocks = 10 getLogs calls <- perfectly viable
+```
+
+The obvious design — "scan `BetPlaced` and `GameResolved` since the deploy block, aggregate,
+done" — cannot work here. Worth stating plainly, because an earlier scan in this repo *appeared*
+to work while silently swallowing every range error and reporting zero events.
+
+The last line is the way through: scanning **one game's** betting window costs ten calls. So a
+leaderboard is affordable if, and only if, we already know which games exist and roughly where
+to look. That means keeping a small index of our own.
+
+## 15.1 The shape that follows
+
+One store, introduced once, unlocks all three surfaces:
+
+| Holds | Why |
+|---|---|
+| `frames` + `durations` per game | So anyone can watch the match, not only its creator |
+| `gameId`, `createdBlock`, `startedAt` | So the leaderboard knows where to scan, in ten calls per game |
+| the sealed reveal ticket | So a match resolves even if its creator closed the tab |
+
+**Vercel Blob** is the cheapest fit: `put()` plus a public `fetch()`, free tier, no schema.
+Upstash Redis or Vercel KV work equally well; nothing below depends on which.
+
+Three decisions to make up front:
+
+- **Frames are safe to publish.** They are already redacted — `Match` has no field that can hold
+  `imposterId` (§6.3), verified against the live payload.
+- **Put `revealAt` inside the sealed ticket.** Storing the ticket publicly means anyone can
+  trigger a reveal, and an early reveal closes betting early. Sealing the timestamp *with* the
+  answer lets `unseal()` refuse a premature reveal, and puts the guard under the same AES-GCM
+  tag — so it cannot be edited.
+- **Nothing in the store is trusted.** Every number shown is recomputed from contract view calls
+  (`games`, `pools`, `stakesOf`, `payoutOf`), which have no range limit. The store answers only
+  *which games exist and where*; the chain answers *what happened*.
+
+## 15.2 Stage A - The match store — 60 min
+
+The keystone. Nothing else is worth building first.
+
+- `src/store/matches.ts` — `putMatch(game, frames, durations)` and `getMatch(id)` over Blob.
+- `POST /api/game` also writes the match, and returns only the id. The handoff still stashes
+  frames locally, so the creator's playback starts instantly with no extra round trip.
+- `GET /api/match/[id]` — returns frames for everyone else. `LiveGame` falls back to it when
+  `sessionStorage` is empty, replacing "that match isn't in this tab".
+- `revealAt` moves inside the sealed ticket; `unseal()` rejects an early reveal.
+- Sweep matches older than a day, so the free tier never becomes a factor.
+
+**Checkpoint:** open a running match's URL in a private window and watch it play.
+
+## 15.3 Stage B - Home — 75 min
+
+The current page is a headline, six crewmates and a button. It reads like a placeholder because
+it is one. Every band below is fed by data that already exists — no invented numbers.
+
+| Band | Content | Source |
+|---|---|---|
+| Hero | Headline, subhead, primary CTA, and one live line: *N markets open · X MON staked today* | `games()` + `pools()` over the store index |
+| How it works | Three numbered steps — **Watch · Read · Stake**. A spectator-only betting game is unusual enough that ten seconds of explanation earns its space | static |
+| The crew | The six as a real roster: name, trait, hue chip, *times imposter*, *how often the crowd caught them* | `GameResolved` per indexed game |
+| Live now | Two or three open markets with pools and a countdown, linking into the lobby | store index + `games()` |
+| Recent verdicts | Last five resolved: who lied, pool size, whether the crowd read it right, tx link | store index + `games()` |
+| Footer | Contract address, explorer link, testnet warning | static |
+
+Constraints from `design.md` §9 this must not break: red marks only *live*, *sabotage* and *the
+action that spends money*; comparable numbers set in mono; 2px rules between bands; no second
+accent hue; never sync the crew's idle loops.
+
+*Recent verdicts* is the band that matters most. A stranger cannot tell whether any of this is
+real, and five settled games with transaction links answer that faster than any amount of copy.
+
+## 15.4 Stage C - Leaderboard and My bets — 75 min
+
+- `src/app/api/stats/route.ts` — per indexed game, ten `getLogs` calls across its betting window
+  to collect `BetPlaced`, then contract reads for the outcome. **Incremental:** aggregates are
+  cached per game and never recomputed, so cost is bounded by *new* games, not by history.
+- Ranking: net P&L (`sum(claimed) - sum(staked)`), with hit rate, games played, biggest single
+  win. Sort by P&L, but show hit rate beside it so one lucky bet doesn't read as skill.
+- `/leaderboard` — the table, with your own row pinned when connected.
+- `/my-bets` — the same aggregate filtered to the connected address, plus unclaimed winnings and
+  a claim button. It falls out nearly free, and it is the page most likely to bring someone back.
+
+**Fallback if the scan is slower under load than measured:** an [Envio
+HyperIndex](https://envio.dev) deployment on Monad testnet removes the range limit and turns all
+of this into one GraphQL query. It is the correct long-term answer, deferred only because it
+adds a service to deploy.
+
+## 15.5 Stage D - Lobby — 60 min
+
+With matches shared, this becomes a real page rather than a list of links.
+
+- **Live now** — matches still playing, with position, pool, bettor count. Join mid-match.
+- **Opening soon / awaiting reveal** — created, or resolved but unclaimed.
+- **Recently settled** — outcome, pool, payout multiple.
+- A *Start a new match* card, since generating one is still the main action.
+
+Seek-on-join is what makes it feel live: the store holds each match's start time, so a late
+arrival computes its frame index from wall-clock instead of starting at zero.
+
+## 15.6 Order, and what to cut
+
+```
+A  match store ---+---> D  lobby        (D cannot exist without A)
+                  +---> B  home ---> C  leaderboard / my bets
+```
+
+Build A first even though B is the visible one: B and C are both better with it, and D is
+impossible without it.
+
+Cut in this order, last first:
+
+1. **My bets** — cheapest to add back later
+2. **Leaderboard** — most new plumbing for the least visible payoff
+3. **Lobby** — hurts, because it is what makes the market real
+4. **Home** — never cut; it is the page everyone sees first
+
+If only one thing ships, ship **A + D**. A prettier home page in front of a market with one
+participant is polish on the wrong problem.
+
+## 15.7 Risks
+
+| Risk | Mitigation |
+|---|---|
+| Blob becomes a hard dependency of match creation | Make the write best-effort, exactly as the chain calls are (§2.3). A failed write means the match plays for its creator only — today's behaviour |
+| Log scanning is slower under real load than measured | Cache per game, never recompute; fall back to Envio |
+| The leaderboard is empty at demo time | Seed it by playing a few matches from two wallets beforehand. An empty leaderboard is worse than no leaderboard |
+| Home grows past one screen of scannable content | Six bands is the ceiling. If a seventh is wanted, something leaves |
+| Shared matches leak the imposter | They cannot — frames carry no role field. Re-run `leak-check` plus the payload grep after Stage A anyway |
+
+## 15.8 What shipped
+
+| Stage | Status |
+|---|---|
+| A · match store | **Done** — `store/matches.ts`, Blob with a filesystem fallback for local dev; `GET /api/match/[id]`; seek-on-join in `Replay` |
+| B · home | **Done** — six bands in `components/home/Bands.tsx`, every number read back from the contract |
+| C · leaderboard + my bets | **Done** — `store/stats.ts`, `GET /api/stats`, `/leaderboard`, `/my-bets` |
+| D · lobby | **Done** — `/lobby`, live / start / settled |
+| Nav | **Done** — the four `TopBar` links were dead; they now go somewhere, with an active state |
+
+Verified end to end against a production build: a match is created and shared,
+a second client with no `sessionStorage` fetches and plays it, an early reveal
+is refused with 425, a reveal after playback lands on-chain, and the
+resolution shows up in `/api/stats` attributed to the right agent.
+
+Two decisions changed during the build:
+
+- **`revalidate` was wrong for `/api/stats`.** It prerendered the route at
+  build time — when the store is necessarily empty — and served that snapshot
+  to the first visitor after every deploy. Replaced with `force-dynamic` plus
+  an 8s TTL cache inside `buildStats()`, so the cost is the same and nothing
+  is ever stale in a way anyone notices.
+- **A filesystem backend was added** so the whole feature can be developed
+  without provisioning Blob. It is dev-only by construction: on Vercel each
+  lambda has its own `/tmp`, so the token decides which backend is used, not
+  `NODE_ENV`.
+
+Not covered by any of this: betting still needs a wallet, so the leaderboard
+stays empty until real bets land. Seed it from two wallets before demoing —
+§15.7 says why an empty leaderboard is worse than none.

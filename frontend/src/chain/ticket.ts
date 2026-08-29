@@ -20,7 +20,13 @@ import type { AgentIndex } from "@/engine/types";
    something attacker-chosen. A forged ticket cannot make resolve() lie: the
    contract still checks the commitment. */
 
-type Payload = { g: string; i: AgentIndex; s: `0x${string}` };
+type Payload = {
+  g: string;
+  i: AgentIndex;
+  s: `0x${string}`;
+  /** Epoch ms before which a reveal is refused (prd.md §15.1). */
+  r: number;
+};
 
 /** Derived from RESOLVER_PK so there is no second secret to configure. If
     there is no resolver key there is no market, so there is nothing to seal. */
@@ -30,13 +36,18 @@ function key(): Buffer | null {
   return createHash("sha256").update(`imposter-ticket:${pk}`).digest();
 }
 
-export function seal(gameId: bigint, imposterId: AgentIndex, salt: `0x${string}`): string | null {
+export function seal(
+  gameId: bigint,
+  imposterId: AgentIndex,
+  salt: `0x${string}`,
+  revealAt: number,
+): string | null {
   const k = key();
   if (!k) return null;
 
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", k, iv);
-  const payload: Payload = { g: gameId.toString(), i: imposterId, s: salt };
+  const payload: Payload = { g: gameId.toString(), i: imposterId, s: salt, r: revealAt };
   const body = Buffer.concat([
     cipher.update(JSON.stringify(payload), "utf8"),
     cipher.final(),
@@ -46,10 +57,16 @@ export function seal(gameId: bigint, imposterId: AgentIndex, salt: `0x${string}`
   return Buffer.concat([iv, cipher.getAuthTag(), body]).toString("base64url");
 }
 
-/** Returns null for anything that is not a ticket this server sealed. */
-export function unseal(
-  ticket: string,
-): { gameId: bigint; imposterId: AgentIndex; salt: `0x${string}` } | null {
+export type Unsealed = { gameId: bigint; imposterId: AgentIndex; salt: `0x${string}` };
+
+/** Returns null for anything this server did not seal, and "early" for a
+    genuine ticket presented before its match could possibly have finished.
+
+    That distinction matters because the ticket is stored publicly alongside
+    the frames — otherwise anyone could end a match the moment it started,
+    which hard-closes betting. The deadline is sealed with the answer, so it
+    is under the same authentication tag and cannot be edited. */
+export function unseal(ticket: string, now = Date.now()): Unsealed | "early" | null {
   const k = key();
   if (!k || typeof ticket !== "string" || ticket.length > 4096) return null;
 
@@ -66,6 +83,7 @@ export function unseal(
 
     const p = JSON.parse(json) as Payload;
     if (typeof p.g !== "string" || typeof p.i !== "number" || typeof p.s !== "string") return null;
+    if (typeof p.r === "number" && now < p.r) return "early";
     return { gameId: BigInt(p.g), imposterId: p.i, salt: p.s };
   } catch {
     return null; // bad tag, bad base64, bad JSON — all the same answer

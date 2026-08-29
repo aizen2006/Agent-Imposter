@@ -2,13 +2,22 @@
 
 import { formatUnits } from "viem";
 import { useBalance } from "wagmi";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { TESTNET_ID } from "@/chain/monad";
 import { useWallet } from "@/chain/useMarket";
 
-const NAV = ["Live", "Lobby", "Leaderboard", "My bets"];
+/* These were dead links until §15 gave them somewhere to go. */
+const NAV = [
+  { label: "Live", href: "/" },
+  { label: "Lobby", href: "/lobby" },
+  { label: "Leaderboard", href: "/leaderboard" },
+  { label: "My bets", href: "/my-bets" },
+];
 
 export function TopBar() {
   const wallet = useWallet();
+  const path = usePathname();
   const { data: bal } = useBalance({
     address: wallet.address,
     // Always the testnet balance, even while the wallet sits on another chain.
@@ -31,7 +40,16 @@ export function TopBar() {
         color: "var(--color-bg)",
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <Link
+        href="/"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          textDecoration: "none",
+          color: "inherit",
+        }}
+      >
         {/* brand mark — the crewmate reduced to a single accent bean */}
         <div
           style={{
@@ -65,18 +83,18 @@ export function TopBar() {
         >
           IMPOSTER FLOOR
         </span>
-      </div>
+      </Link>
 
       <nav style={{ display: "flex", gap: 4, marginLeft: 10 }}>
-        {NAV.map((label, i) => (
-          <a
-            key={label}
-            href="#"
+        {NAV.map((item) => (
+          <Link
+            key={item.href}
+            href={item.href}
             className="nav-pill"
-            aria-current={i === 0 ? "page" : undefined}
+            aria-current={path === item.href ? "page" : undefined}
           >
-            {label}
-          </a>
+            {item.label}
+          </Link>
         ))}
       </nav>
 

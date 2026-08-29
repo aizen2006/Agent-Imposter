@@ -19,6 +19,7 @@ export function Replay({
   marketId,
   onEnd,
   banner,
+  startAtMs = 0,
   endLabel = "Run another match",
 }: {
   frames: Match[];
@@ -26,6 +27,9 @@ export function Replay({
   marketId?: bigint;
   onEnd?: () => void;
   banner?: React.ReactNode;
+  /** Milliseconds already elapsed — a viewer joining a match in progress
+      starts where it actually is rather than replaying it from the top. */
+  startAtMs?: number;
   endLabel?: string;
 }) {
   const [i, setI] = useState(-1);
@@ -35,7 +39,16 @@ export function Replay({
 
   useEffect(() => {
     let cancelled = false;
+
+    // Walk the timeline to find where a late joiner should come in.
     let n = 0;
+    if (startAtMs > 0) {
+      let t = 0;
+      while (n < durations.length && t + durations[n] <= startAtMs) {
+        t += durations[n];
+        n += 1;
+      }
+    }
 
     // A chained timeout rather than an interval: every event has its own beat
     // and a fixed tick would flatten the pacing (prd.md §7.1).
@@ -54,7 +67,9 @@ export function Replay({
       timer.current = setTimeout(step, durations[n] ?? 0);
     };
 
-    timer.current = setTimeout(step, durations[0] ?? 0);
+    // A joiner mid-match shows their frame immediately; the first tick then
+    // carries them to the next one.
+    timer.current = setTimeout(step, n === 0 ? (durations[0] ?? 0) : 0);
     return () => {
       cancelled = true;
       if (timer.current) clearTimeout(timer.current);
@@ -62,7 +77,7 @@ export function Replay({
     // onEnd is intentionally not a dependency: it fires once and re-running
     // this effect would restart the match from the top.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [frames, durations]);
+  }, [frames, durations, startAtMs]);
 
   const match = i >= 0 ? frames[i] : null;
   if (!match) return <Cueing />;

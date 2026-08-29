@@ -113,7 +113,14 @@ export async function verifyCommitmentEncoding(
   }
 }
 
-export type ChainResult = { ok: boolean; hash?: `0x${string}`; reason?: string };
+export type ChainResult = {
+  ok: boolean;
+  hash?: `0x${string}`;
+  reason?: string;
+  /** Chain height when the market opened. Where §15.4 starts its log scan —
+      bets can only land after this, so nothing earlier is worth reading. */
+  block?: number;
+};
 
 /** Opens the market. The imposter is committed here, before a single MON is
     staked, so the outcome is provably fixed in advance. */
@@ -131,12 +138,18 @@ export async function openMarket(game: Game, windowSeconds = 300): Promise<Chain
 
   try {
     const closeAt = BigInt(Math.floor(Date.now() / 1000) + windowSeconds);
+
+    // Read the height before sending rather than waiting on a receipt: the tx
+    // lands a few blocks later and bets later still, so scanning from here
+    // catches everything without adding a confirmation wait to match creation.
+    const block = await publicClient.getBlockNumber().catch(() => null);
+
     const hash = await client.writeContract({
       ...contract,
       functionName: "createGame",
       args: [game.numericId, closeAt, commitment],
     });
-    return { ok: true, hash };
+    return { ok: true, hash, block: block === null ? undefined : Number(block) };
   } catch (err) {
     const reason = err instanceof Error ? err.message.split("\n")[0] : String(err);
     console.warn(`[resolver] createGame failed: ${reason}`);
